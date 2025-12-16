@@ -8,7 +8,7 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 
-<div class="space-y-6" id="xmlCategoryMappingApp">
+<div class="space-y-6" id="xmlCategoryMappingApp" style="min-height: auto; overflow: visible;">
     <!-- Toast Notification -->
     <div 
         id="toast"
@@ -118,8 +118,8 @@
     </div>
 
     <!-- Table -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div class="overflow-x-auto">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden" id="tableContainer" style="position: relative; overflow: visible;">
+        <div class="overflow-x-auto" style="overflow-y: visible;">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead class="bg-gray-50 dark:bg-gray-700">
                     <tr>
@@ -206,6 +206,7 @@
             placeholder: 'Global kategori seçin...',
             allowClear: true,
             width: '100%',
+            dropdownParent: $('#tableContainer'),
             ajax: {
                 url: '{{ route('admin.xml.category-mappings.categories') }}',
                 dataType: 'json',
@@ -320,48 +321,74 @@
         });
         rowCategorySelect2s = {};
 
-        elements.tableBody.innerHTML = items.map(item => {
+        // Clear table body first
+        elements.tableBody.innerHTML = '';
+        
+        // Create rows using DOM methods to ensure proper tag closure
+        items.forEach(item => {
             const isSelected = selectedItems.has(item.id);
             const mappedCategoryId = item.mapped_category_id;
-
-            return `
-                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <input 
-                            type="checkbox"
-                            id="item-checkbox-${item.id}"
-                            name="item_${item.id}"
-                            data-item-id="${item.id}"
-                            ${isSelected ? 'checked' : ''}
-                            class="item-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        >
-                    </td>
-                    <td class="px-6 py-4">
-                        <div class="text-sm text-gray-900 dark:text-white max-w-md">${escapeHtml(item.raw_path)}</div>
-                    </td>
-                    <td class="px-6 py-4">
-                        <select 
-                            id="category-select-${item.id}"
-                            name="category_${item.id}"
-                            data-item-id="${item.id}"
-                            class="category-select-${item.id} w-full"
-                        >
-                            <option value="">Seçiniz...</option>
-                        </select>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="px-2 py-1 text-xs font-semibold rounded-full ${mappedCategoryId ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300' : 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-300'}">
-                            ${mappedCategoryId ? 'MAPPED' : 'NEEDS_MAPPING'}
-                        </span>
-                    </td>
-                </tr>
-            `;
-        }).join('');
+            
+            // Create row element
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50 dark:hover:bg-gray-700';
+            
+            // Checkbox cell
+            const td1 = document.createElement('td');
+            td1.className = 'px-6 py-4 whitespace-nowrap';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = 'item-checkbox-' + item.id;
+            checkbox.name = 'item_' + item.id;
+            checkbox.setAttribute('data-item-id', item.id);
+            checkbox.className = 'item-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500';
+            if (isSelected) {
+                checkbox.checked = true;
+            }
+            td1.appendChild(checkbox);
+            tr.appendChild(td1);
+            
+            // Raw path cell
+            const td2 = document.createElement('td');
+            td2.className = 'px-6 py-4';
+            const div = document.createElement('div');
+            div.className = 'text-sm text-gray-900 dark:text-white max-w-md';
+            div.textContent = item.raw_path || '';
+            td2.appendChild(div);
+            tr.appendChild(td2);
+            
+            // Category select cell
+            const td3 = document.createElement('td');
+            td3.className = 'px-6 py-4';
+            const select = document.createElement('select');
+            select.id = 'category-select-' + item.id;
+            select.name = 'category_' + item.id;
+            select.setAttribute('data-item-id', item.id);
+            select.className = 'category-select-' + item.id + ' w-full';
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Seçiniz...';
+            select.appendChild(option);
+            td3.appendChild(select);
+            tr.appendChild(td3);
+            
+            // Status cell
+            const td4 = document.createElement('td');
+            td4.className = 'px-6 py-4 whitespace-nowrap';
+            const span = document.createElement('span');
+            span.className = 'px-2 py-1 text-xs font-semibold rounded-full ' + 
+                (mappedCategoryId ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300' : 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-300');
+            span.textContent = mappedCategoryId ? 'MAPPED' : 'NEEDS_MAPPING';
+            td4.appendChild(span);
+            tr.appendChild(td4);
+            
+            elements.tableBody.appendChild(tr);
+        });
 
         // Initialize Select2 for each row - Use setTimeout to ensure DOM is ready
         setTimeout(() => {
             items.forEach(item => {
-                const selectElement = document.querySelector(`.category-select-${item.id}`);
+                const selectElement = document.getElementById(`category-select-${item.id}`);
                 if (selectElement) {
                     // Ensure element is not already initialized
                     if ($(selectElement).hasClass('select2-hidden-accessible')) {
@@ -373,7 +400,7 @@
                         placeholder: 'Kategori seçin...',
                         allowClear: true,
                         width: '100%',
-                        dropdownAutoWidth: true,
+                        dropdownParent: $('#tableContainer'),
                         ajax: {
                             url: '{{ route('admin.xml.category-mappings.categories') }}',
                             dataType: 'json',
@@ -421,32 +448,32 @@
                             });
                     }
 
-                // Handle change event - only when user actually changes the value
-                let previousValue = item.mapped_category_id || null;
-                let isInitializing = true;
-                
-                // Mark initialization as complete after a delay
-                setTimeout(() => {
-                    isInitializing = false;
-                    previousValue = select2.val();
-                }, 1000);
-                
-                select2.on('change', function() {
-                    // Skip if we're still initializing
-                    if (isInitializing) {
-                        return;
-                    }
+                    // Handle change event - only when user actually changes the value
+                    let previousValue = item.mapped_category_id || null;
+                    let isInitializing = true;
                     
-                    const currentValue = this.value ? parseInt(this.value) : null;
+                    // Mark initialization as complete after a delay
+                    setTimeout(() => {
+                        isInitializing = false;
+                        previousValue = select2.val();
+                    }, 1000);
                     
-                    // Only update if value actually changed and user selected something
-                    if (currentValue && currentValue !== previousValue) {
-                        previousValue = currentValue;
-                        updateMapping(item.id, currentValue);
-                    } else if (!currentValue) {
-                        previousValue = null;
-                    }
-                });
+                    select2.on('change', function() {
+                        // Skip if we're still initializing
+                        if (isInitializing) {
+                            return;
+                        }
+                        
+                        const currentValue = this.value ? parseInt(this.value) : null;
+                        
+                        // Only update if value actually changed and user selected something
+                        if (currentValue && currentValue !== previousValue) {
+                            previousValue = currentValue;
+                            updateMapping(item.id, currentValue);
+                        } else if (!currentValue) {
+                            previousValue = null;
+                        }
+                    });
 
                     // Store jQuery element for later destruction
                     rowCategorySelect2s[item.id] = select2;
@@ -571,11 +598,19 @@
 
     function updateItemStatus(itemId, categoryId) {
         // Update status badge without reloading the entire table
-        const row = document.querySelector(`tr:has(input[data-item-id="${itemId}"])`);
-        if (row) {
-            const statusCell = row.querySelector('td:last-child');
-            if (statusCell) {
-                statusCell.innerHTML = '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300">MAPPED</span>';
+        const checkbox = document.querySelector(`input[data-item-id="${itemId}"]`);
+        if (checkbox) {
+            const row = checkbox.closest('tr');
+            if (row) {
+                const statusCell = row.querySelector('td:last-child');
+                if (statusCell) {
+                    // Clear and create new span element properly
+                    statusCell.textContent = '';
+                    const span = document.createElement('span');
+                    span.className = 'px-2 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300';
+                    span.textContent = 'MAPPED';
+                    statusCell.appendChild(span);
+                }
             }
         }
     }
@@ -717,6 +752,49 @@
 
     // Initialize bulk category select
     initBulkCategorySelect();
+
+    // Fix page height issue - remove any invisible elements that extend page
+    function fixPageHeight() {
+        // Remove any Select2 elements that might extend beyond viewport
+        document.querySelectorAll('.select2-dropdown').forEach(dropdown => {
+            if (!dropdown.classList.contains('select2-dropdown--open')) {
+                dropdown.style.position = 'absolute';
+                dropdown.style.visibility = 'hidden';
+            }
+        });
+
+        // Ensure body doesn't have extra height
+        const body = document.body;
+        const html = document.documentElement;
+        const bodyHeight = Math.max(
+            body.scrollHeight,
+            body.offsetHeight,
+            html.clientHeight,
+            html.scrollHeight,
+            html.offsetHeight
+        );
+        const viewportHeight = window.innerHeight;
+        
+        // If body is taller than viewport without content, fix it
+        if (bodyHeight > viewportHeight + 100) {
+            // Check if there are invisible elements causing the issue
+            const allElements = document.querySelectorAll('*');
+            allElements.forEach(el => {
+                const rect = el.getBoundingClientRect();
+                if (rect.bottom > viewportHeight && 
+                    rect.top > viewportHeight && 
+                    el.offsetHeight === 0 && 
+                    el.style.position !== 'fixed' &&
+                    el.style.position !== 'absolute') {
+                    el.style.display = 'none';
+                }
+            });
+        }
+    }
+
+    // Run fix after page load and after Select2 initialization
+    setTimeout(fixPageHeight, 1000);
+    window.addEventListener('resize', fixPageHeight);
 })();
 </script>
 
@@ -760,14 +838,99 @@
     color: #f9fafb;
 }
 
-/* Fix Select2 dropdown positioning after AJAX */
+/* Fix Select2 dropdown positioning - prevent page stretching */
 .select2-container {
     z-index: 9999;
+    position: relative;
 }
 
-/* Ensure Select2 dropdowns are properly styled after AJAX load */
-.select2-container--bootstrap-5.select2-container--open .select2-dropdown {
+/* Ensure Select2 dropdowns don't affect page height */
+.select2-dropdown {
+    position: absolute !important;
+    z-index: 10000 !important;
     border-color: #4b5563;
+}
+
+/* Prevent Select2 from creating extra scroll space */
+.select2-container--open .select2-dropdown {
+    position: absolute !important;
+}
+
+/* Ensure dropdown parent contains the dropdown */
+#tableContainer {
+    position: relative;
+    overflow: visible;
+}
+
+#tableContainer .select2-dropdown {
+    position: absolute !important;
+    margin-top: 0 !important;
+}
+
+/* Ensure table container doesn't stretch unnecessarily */
+#tableBody {
+    min-height: auto;
+}
+
+/* Fix overflow issues - prevent horizontal scroll from creating vertical space */
+.overflow-x-auto {
+    overflow-x: auto;
+    overflow-y: visible;
+}
+
+/* Remove any unnecessary spacing */
+.select2-results {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+/* Prevent body/html from having extra height */
+body {
+    overflow-x: hidden;
+}
+
+/* Remove any padding/margin that might cause extra scroll */
+#xmlCategoryMappingApp {
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+
+/* Ensure no element extends beyond viewport */
+#xmlCategoryMappingApp > *:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+/* Fix Select2 dropdown positioning to prevent page extension */
+.select2-container--open .select2-dropdown {
+    position: absolute !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+/* Ensure Select2 doesn't create invisible overflow */
+.select2-container {
+    contain: layout;
+}
+
+/* Prevent body/html from having extra height */
+body {
+    overflow-x: hidden;
+}
+
+/* Ensure Select2 doesn't create invisible elements that extend page */
+.select2-container--open {
+    position: relative;
+}
+
+.select2-container--open .select2-dropdown--below {
+    position: absolute !important;
+    top: 100% !important;
+}
+
+.select2-container--open .select2-dropdown--above {
+    position: absolute !important;
+    bottom: 100% !important;
 }
 </style>
 @endsection
