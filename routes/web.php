@@ -31,5 +31,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/feed-runs', [\App\Http\Controllers\Admin\FeedRunController::class, 'index'])->name('feed-runs.index');
         Route::get('/feed-runs/{feedRun}', [\App\Http\Controllers\Admin\FeedRunController::class, 'show'])->name('feed-runs.show');
         Route::post('/feed-runs/trigger', [\App\Http\Controllers\Admin\FeedRunController::class, 'triggerDownload'])->name('feed-runs.trigger');
+        
+        // XML Category Mappings
+        Route::prefix('xml')->name('xml.')->group(function () {
+            Route::get('/category-mappings', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'index'])->name('category-mappings.index');
+            Route::get('/category-mappings/data', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'getData'])->name('category-mappings.data');
+            Route::post('/category-mappings/bulk', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'bulkUpdate'])->name('category-mappings.bulk');
+        });
     });
 });

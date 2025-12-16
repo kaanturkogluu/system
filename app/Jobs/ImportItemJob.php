@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\CategoryMapping;
 use App\Models\ImportItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -80,7 +81,13 @@ class ImportItemJob implements ShouldQueue
                 $productTitle = $this->getNestedValue($payload, ['product', 'title']);
                 $productDescription = $this->getNestedValue($payload, ['product', 'description']);
                 $brandName = $this->getNestedValue($payload, ['product', 'brand']);
-                $categoryRawPath = $this->getNestedValue($payload, ['category', 'raw_path']);
+                
+                // external_category_id ve raw_path hem root seviyesinde hem de category altında olabilir
+                $externalCategoryId = $this->getNestedValue($payload, ['category', 'external_category_id'])
+                    ?? $this->getNestedValue($payload, ['external_category_id']);
+                $categoryRawPath = $this->getNestedValue($payload, ['category', 'raw_path'])
+                    ?? $this->getNestedValue($payload, ['raw_path']);
+                
                 $price = $this->getNestedValue($payload, ['pricing', 'price']);
                 $stock = $this->getNestedValue($payload, ['stock']);
                 $attributes = $this->getNestedValue($payload, ['attributes']);
@@ -122,54 +129,78 @@ class ImportItemJob implements ShouldQueue
                     return;
                 }
 
-                // 4) Kategori işlemi
-                if (empty($categoryRawPath)) {
+                // 4) Kategori işlemi - category_mappings üzerinden
+                $categoryId = null;
+
+                if (!empty($externalCategoryId)) {
+                    $mapping = CategoryMapping::where('external_category_id', $externalCategoryId)
+                        ->where('status', 'mapped')
+                        ->first();
+
+                    if ($mapping) {
+                        $category = Category::find($mapping->category_id);
+
+                        if ($category && $category->is_leaf) {
+                            $categoryId = $category->id;
+                        } else {
+                            if (!$category) {
+                                $importItem->update([
+                                    'status' => 'NEEDS_MAPPING',
+                                    'error_message' => 'Mapped kategori bulunamadı',
+                                ]);
+
+                                Log::channel('imports')->warning('Import item needs mapping - mapped category not found', [
+                                    'import_item_id' => $this->importItemId,
+                                    'product_sku' => $sku,
+                                    'status' => 'NEEDS_MAPPING',
+                                    'external_category_id' => $externalCategoryId,
+                                    'category_id' => $mapping->category_id,
+                                ]);
+
+                                return;
+                            } else {
+                                $importItem->update([
+                                    'status' => 'NEEDS_MAPPING',
+                                    'error_message' => 'Kategori leaf değil: ' . $category->name,
+                                ]);
+
+                                Log::channel('imports')->warning('Import item needs mapping - category is not leaf', [
+                                    'import_item_id' => $this->importItemId,
+                                    'product_sku' => $sku,
+                                    'status' => 'NEEDS_MAPPING',
+                                    'category_id' => $category->id,
+                                    'category_name' => $category->name,
+                                ]);
+
+                                return;
+                            }
+                        }
+                    } else {
+                        $importItem->update([
+                            'status' => 'NEEDS_MAPPING',
+                            'error_message' => 'Kategori eşleştirmesi bulunamadı: ' . ($categoryRawPath ?? 'N/A'),
+                        ]);
+
+                        Log::channel('imports')->warning('Import item needs mapping - category mapping not found', [
+                            'import_item_id' => $this->importItemId,
+                            'product_sku' => $sku,
+                            'status' => 'NEEDS_MAPPING',
+                            'external_category_id' => $externalCategoryId,
+                            'category_raw_path' => $categoryRawPath,
+                        ]);
+
+                        return;
+                    }
+                } else {
                     $importItem->update([
                         'status' => 'NEEDS_MAPPING',
-                        'error_message' => 'Kategori raw_path bulunamadı',
+                        'error_message' => 'Kategori bilgisi bulunamadı',
                     ]);
 
-                    Log::channel('imports')->warning('Import item needs mapping - missing category path', [
+                    Log::channel('imports')->warning('Import item needs mapping - missing category info', [
                         'import_item_id' => $this->importItemId,
                         'product_sku' => $sku,
                         'status' => 'NEEDS_MAPPING',
-                    ]);
-
-                    return;
-                }
-
-                // raw_path ile kategori eşleştirmesi
-                $category = Category::where('path', $categoryRawPath)->first();
-
-                if (!$category) {
-                    $importItem->update([
-                        'status' => 'NEEDS_MAPPING',
-                        'error_message' => 'Kategori eşleştirmesi bulunamadı: ' . $categoryRawPath,
-                    ]);
-
-                    Log::channel('imports')->warning('Import item needs mapping - category not found', [
-                        'import_item_id' => $this->importItemId,
-                        'product_sku' => $sku,
-                        'status' => 'NEEDS_MAPPING',
-                        'category_path' => $categoryRawPath,
-                    ]);
-
-                    return;
-                }
-
-                // Kategori LEAF kontrolü
-                if (!$category->is_leaf) {
-                    $importItem->update([
-                        'status' => 'NEEDS_MAPPING',
-                        'error_message' => 'Kategori leaf değil: ' . $category->name,
-                    ]);
-
-                    Log::channel('imports')->warning('Import item needs mapping - category is not leaf', [
-                        'import_item_id' => $this->importItemId,
-                        'product_sku' => $sku,
-                        'status' => 'NEEDS_MAPPING',
-                        'category_id' => $category->id,
-                        'category_name' => $category->name,
                     ]);
 
                     return;
@@ -187,7 +218,7 @@ class ImportItemJob implements ShouldQueue
                         'title' => $productTitle ?? 'Başlıksız Ürün',
                         'description' => $productDescription,
                         'brand_id' => $brandId,
-                        'category_id' => $category->id,
+                        'category_id' => $categoryId,
                         'product_type' => 'simple',
                         'status' => 'IMPORTED',
                     ]

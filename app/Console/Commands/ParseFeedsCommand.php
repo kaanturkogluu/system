@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ExternalCategory;
 use App\Models\FeedRun;
 use App\Models\ImportItem;
 use Illuminate\Console\Command;
@@ -169,6 +170,63 @@ class ParseFeedsCommand extends Command
             // Normalize payload oluştur
             $payload = $this->normalizePayload($xml);
 
+            // Kategori bilgisini çıkar ve external_categories'e kaydet
+            $categoryRawPath = $this->extractCategoryPath($xml, $payload);
+            $externalCategoryId = null;
+
+            if ($categoryRawPath) {
+                $sourceType = $this->getSourceType($feedRun);
+                $externalId = $this->generateExternalCategoryId($sourceType . '|' . $categoryRawPath);
+                $level = $this->calculateCategoryLevel($categoryRawPath);
+
+                try {
+                    $externalCategory = ExternalCategory::firstOrCreate(
+                        [
+                            'source_type' => $sourceType,
+                            'external_id' => $externalId,
+                        ],
+                        [
+                            'raw_path' => $categoryRawPath,
+                            'level' => $level,
+                        ]
+                    );
+
+                    $externalCategoryId = $externalCategory->id;
+
+                    Log::channel('imports')->debug('External category created/retrieved', [
+                        'feed_run_id' => $feedRun->id,
+                        'external_category_id' => $externalCategoryId,
+                        'source_type' => $sourceType,
+                        'raw_path' => $categoryRawPath,
+                        'level' => $level,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::channel('imports')->error('External category creation failed', [
+                        'feed_run_id' => $feedRun->id,
+                        'source_type' => $sourceType,
+                        'raw_path' => $categoryRawPath,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            } else {
+                Log::channel('imports')->warning('Category path not found in XML', [
+                    'feed_run_id' => $feedRun->id,
+                    'feed_id' => $feedRun->feed_source_id,
+                    'xml_keys' => array_keys($payload),
+                ]);
+            }
+
+            // Payload'a external_category_id ve raw_path ekle (root seviyesinde)
+            $payload['external_category_id'] = $externalCategoryId;
+            $payload['raw_path'] = $categoryRawPath;
+            
+            // Ayrıca category altına da ekle (geriye dönük uyumluluk için)
+            if (!isset($payload['category'])) {
+                $payload['category'] = [];
+            }
+            $payload['category']['external_category_id'] = $externalCategoryId;
+            $payload['category']['raw_path'] = $categoryRawPath;
+
             // Hash oluştur (unicode ve slash escape kapalı)
             $jsonString = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             $hash = hash('sha256', $jsonString);
@@ -269,6 +327,234 @@ class ParseFeedsCommand extends Command
             }
         }
         return null;
+    }
+
+    /**
+     * Extract category path from XML
+     */
+    private function extractCategoryPath(\SimpleXMLElement $xml, array $payload): ?string
+    {
+        // 1) Önce payload'dan nested path'leri dene
+        $possiblePaths = [
+            ['CategoryPath'],
+            ['Category', 'Path'],
+            ['Category', 'CategoryPath'],
+            ['ProductCategory', 'Path'],
+            ['ProductCategory', 'CategoryPath'],
+            ['Kategori', 'Path'],
+            ['Kategori', 'KategoriYolu'],
+            ['CategoryPath', 'Value'],
+            ['Category', 'FullPath'],
+        ];
+
+        foreach ($possiblePaths as $path) {
+            $value = $this->getNestedValue($payload, $path);
+            if (!empty($value) && is_string($value)) {
+                $normalized = $this->normalizeCategoryPath($value);
+                if ($normalized) {
+                    return $normalized;
+                }
+            }
+        }
+
+        // 2) XML'den direkt alanları dene
+        $directFields = [
+            'CategoryPath', 'Category', 'ProductCategory', 
+            'Kategori', 'KategoriYolu', 'CategoryName',
+            'CategoryFullPath', 'ProductCategoryPath'
+        ];
+        
+        foreach ($directFields as $field) {
+            $value = $this->extractValue($xml, [$field]);
+            if (!empty($value)) {
+                $normalized = $this->normalizeCategoryPath($value);
+                if ($normalized) {
+                    return $normalized;
+                }
+            }
+        }
+
+        // 3) Kategori hiyerarşisini oluşturmayı dene (Category1, Category2, Category3 gibi)
+        $categoryHierarchy = $this->extractCategoryHierarchy($xml, $payload);
+        if ($categoryHierarchy) {
+            return $categoryHierarchy;
+        }
+
+        // 4) XML'deki tüm kategori benzeri alanları ara
+        $categoryFields = $this->findCategoryFields($xml, $payload);
+        if ($categoryFields) {
+            return $categoryFields;
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalize category path string
+     */
+    private function normalizeCategoryPath(string $path): ?string
+    {
+        if (empty(trim($path))) {
+            return null;
+        }
+
+        // Trim whitespace
+        $path = trim($path);
+
+        // Farklı separator'ları normalize et
+        $path = str_replace(['/', '\\', '|', '::', '->'], '>', $path);
+        
+        // Birden fazla > karakterini tek > yap
+        $path = preg_replace('/\s*>\s*>/', '>', $path);
+        $path = preg_replace('/\s*>\s*/', ' > ', $path);
+        
+        // Her segment'i trim et
+        $parts = explode('>', $path);
+        $parts = array_map('trim', $parts);
+        $parts = array_filter($parts, function($part) {
+            return !empty($part);
+        });
+
+        if (empty($parts)) {
+            return null;
+        }
+
+        return implode(' > ', $parts);
+    }
+
+    /**
+     * Extract category hierarchy from XML (Category1, Category2, Category3, etc.)
+     */
+    private function extractCategoryHierarchy(\SimpleXMLElement $xml, array $payload): ?string
+    {
+        $categories = [];
+
+        // Payload'dan Category1, Category2, Category3 gibi alanları bul
+        for ($i = 1; $i <= 10; $i++) {
+            $categoryKey = "Category{$i}";
+            $value = $this->getNestedValue($payload, [$categoryKey]);
+            if (empty($value)) {
+                $value = $this->extractValue($xml, [$categoryKey]);
+            }
+            
+            if (!empty($value) && is_string($value)) {
+                $categories[] = trim($value);
+            } else {
+                break;
+            }
+        }
+
+        if (empty($categories)) {
+            // Kategori1, Kategori2 gibi Türkçe alanları dene
+            for ($i = 1; $i <= 10; $i++) {
+                $categoryKey = "Kategori{$i}";
+                $value = $this->getNestedValue($payload, [$categoryKey]);
+                if (empty($value)) {
+                    $value = $this->extractValue($xml, [$categoryKey]);
+                }
+                
+                if (!empty($value) && is_string($value)) {
+                    $categories[] = trim($value);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if (count($categories) > 0) {
+            return implode(' > ', $categories);
+        }
+
+        return null;
+    }
+
+    /**
+     * Find category fields in XML by searching for common patterns
+     */
+    private function findCategoryFields(\SimpleXMLElement $xml, array $payload): ?string
+    {
+        // XML'deki tüm child node'ları kontrol et
+        $categoryKeywords = ['category', 'kategori', 'cat', 'path', 'yol'];
+        
+        foreach ($xml->children() as $child) {
+            $name = strtolower($child->getName());
+            $value = trim((string) $child);
+            
+            // Kategori ile ilgili bir alan mı?
+            foreach ($categoryKeywords as $keyword) {
+                if (strpos($name, $keyword) !== false && !empty($value)) {
+                    $normalized = $this->normalizeCategoryPath($value);
+                    if ($normalized && strlen($normalized) > 3) {
+                        return $normalized;
+                    }
+                }
+            }
+        }
+
+        // Payload'da kategori benzeri alanları ara
+        foreach ($payload as $key => $value) {
+            if (is_string($value) && !empty($value)) {
+                $keyLower = strtolower($key);
+                foreach ($categoryKeywords as $keyword) {
+                    if (strpos($keyLower, $keyword) !== false) {
+                        $normalized = $this->normalizeCategoryPath($value);
+                        if ($normalized && strlen($normalized) > 3) {
+                            return $normalized;
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get source type from feed run
+     */
+    private function getSourceType(FeedRun $feedRun): string
+    {
+        $feedSource = $feedRun->feedSource;
+        $sourceName = strtolower(str_replace(' ', '_', $feedSource->name ?? 'unknown'));
+        return $sourceName . '_xml';
+    }
+
+    /**
+     * Generate external category ID from raw path
+     */
+    private function generateExternalCategoryId(string $rawPath): string
+    {
+        return hash('sha256', $rawPath);
+    }
+
+    /**
+     * Calculate category level from raw path
+     */
+    private function calculateCategoryLevel(string $rawPath): int
+    {
+        $parts = explode('>', $rawPath);
+        $parts = array_filter(array_map('trim', $parts), function($part) {
+            return !empty($part);
+        });
+        return count($parts);
+    }
+
+    /**
+     * Get nested value from array using array path
+     */
+    private function getNestedValue(array $array, array $path): mixed
+    {
+        $current = $array;
+
+        foreach ($path as $key) {
+            if (is_array($current) && isset($current[$key])) {
+                $current = $current[$key];
+            } else {
+                return null;
+            }
+        }
+
+        return $current;
     }
 
     /**
