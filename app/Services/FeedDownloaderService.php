@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\FeedRun;
 use App\Models\FeedSource;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -138,65 +140,54 @@ class FeedDownloaderService
 
         try {
             $context['url'] = $url;
-            Log::channel('imports')->debug('Starting file download', $context);
+            Log::channel('imports')->debug('Starting file download with Laravel Http Client', $context);
 
-            // Use stream context for large files
-            $contextOptions = [
-                'http' => [
-                    'method' => 'GET',
-                    'timeout' => 300, // 5 minutes
-                    'follow_location' => true,
-                    'max_redirects' => 5,
-                ],
-            ];
-
-            $streamContext = stream_context_create($contextOptions);
-            $sourceHandle = fopen($url, 'r', false, $streamContext);
-
-            if (!$sourceHandle) {
-                throw new Exception("Failed to open URL: {$url}");
-            }
-
-            $targetHandle = fopen($tempFile, 'w');
-
-            if (!$targetHandle) {
-                fclose($sourceHandle);
-                throw new Exception("Failed to create temporary file");
-            }
-
-            // Stream copy in chunks (memory-safe)
-            $chunkSize = 8192; // 8KB chunks
-            $totalBytes = 0;
+            // Use Laravel Http Client with sink to write directly to file (memory-safe)
             $maxSize = 1024 * 1024 * 1024; // 1GB limit
-
-            while (!feof($sourceHandle)) {
-                $chunk = fread($sourceHandle, $chunkSize);
-                if ($chunk === false) {
-                    break;
-                }
-
-                $bytesWritten = fwrite($targetHandle, $chunk);
-                if ($bytesWritten === false) {
-                    throw new Exception("Failed to write to temporary file");
-                }
-
-                $totalBytes += $bytesWritten;
-
-                // Check size limit
-                if ($totalBytes > $maxSize) {
-                    fclose($sourceHandle);
-                    fclose($targetHandle);
-                    unlink($tempFile);
-                    throw new Exception("File size exceeds maximum limit (1GB)");
-                }
+            
+            try {
+                $response = Http::timeout(300) // 5 minutes
+                    ->withHeaders([
+                        'User-Agent' => 'Mozilla/5.0 (compatible; FeedBot/1.0)',
+                        'Accept' => 'application/xml,text/xml,*/*',
+                    ])
+                    ->withOptions([
+                        'max_redirects' => 5,
+                        'verify' => true, // SSL verification
+                    ])
+                    ->sink($tempFile) // Write directly to file, not RAM
+                    ->throw() // Throw exception on HTTP errors
+                    ->get($url);
+            } catch (RequestException $e) {
+                // Handle HTTP client exceptions
+                $statusCode = $e->response ? $e->response->status() : 'unknown';
+                throw new Exception("HTTP request failed with status {$statusCode}: {$url}. Error: " . $e->getMessage());
+            } catch (\Exception $e) {
+                // Handle other exceptions (timeout, SSL, etc.)
+                throw new Exception("Download failed for {$url}: " . $e->getMessage());
             }
 
-            fclose($sourceHandle);
-            fclose($targetHandle);
+            // Check if request was successful (additional check)
+            if (!$response->successful()) {
+                $statusCode = $response->status();
+                throw new Exception("HTTP request failed with status {$statusCode}: {$url}");
+            }
+
+            // Check file size
+            if (!file_exists($tempFile)) {
+                throw new Exception("Downloaded file does not exist");
+            }
+
+            $totalBytes = filesize($tempFile);
 
             if ($totalBytes === 0) {
                 unlink($tempFile);
                 throw new Exception("Downloaded file is empty");
+            }
+
+            if ($totalBytes > $maxSize) {
+                unlink($tempFile);
+                throw new Exception("File size exceeds maximum limit (1GB)");
             }
 
             $context['file_size'] = $totalBytes;
