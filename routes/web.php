@@ -1,0 +1,35 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Admin\AuthController;
+use App\Http\Controllers\Admin\DashboardController;
+
+// Public Routes
+Route::get('/', function () {
+    return view('welcome');
+});
+
+// Admin Routes
+Route::prefix('admin')->name('admin.')->group(function () {
+    // Auth Routes
+    Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+    // Protected Routes
+    Route::middleware('auth')->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/categories', [\App\Http\Controllers\Admin\CategoryController::class, 'index'])->name('categories.index');
+        
+        // Marketplaces
+        Route::resource('marketplaces', \App\Http\Controllers\Admin\MarketplaceController::class);
+        
+        // Feed Sources
+        Route::resource('feed-sources', \App\Http\Controllers\Admin\FeedSourceController::class);
+        
+        // Feed Runs
+        Route::get('/feed-runs', [\App\Http\Controllers\Admin\FeedRunController::class, 'index'])->name('feed-runs.index');
+        Route::get('/feed-runs/{feedRun}', [\App\Http\Controllers\Admin\FeedRunController::class, 'show'])->name('feed-runs.show');
+        Route::post('/feed-runs/trigger', [\App\Http\Controllers\Admin\FeedRunController::class, 'triggerDownload'])->name('feed-runs.trigger');
+    });
+});
