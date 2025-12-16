@@ -36,6 +36,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::prefix('xml')->name('xml.')->group(function () {
             Route::get('/category-mappings', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'index'])->name('category-mappings.index');
             Route::get('/category-mappings/data', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'getData'])->name('category-mappings.data');
+            Route::get('/category-mappings/categories', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'getCategories'])->name('category-mappings.categories');
             Route::post('/category-mappings/bulk', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'bulkUpdate'])->name('category-mappings.bulk');
         });
     });

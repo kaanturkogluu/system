@@ -20,9 +20,54 @@ class XmlCategoryMappingController extends Controller
             ->orderBy('name')
             ->get();
         
-        $categories = Category::where('is_leaf', true)
+        // Sadece ana kategorileri getir (parent_id = null)
+        $mainCategories = Category::whereNull('parent_id')
+            ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name', 'path'])
+            ->get(['id', 'name']);
+
+        return view('admin.xml.category-mappings.index', compact('feedSources', 'mainCategories'));
+    }
+
+    public function getCategories(Request $request)
+    {
+        $parentCategoryId = $request->get('parent_category_id');
+        $search = $request->get('search');
+
+        $query = Category::where('is_leaf', true)
+            ->where('is_active', true);
+
+        // Ana kategori seçilmişse, sadece o ana kategori altındaki kategorileri getir
+        if ($parentCategoryId) {
+            $parentCategory = Category::find($parentCategoryId);
+            if ($parentCategory) {
+                // Path ile filtreleme: parent'ın id'si path içinde geçen veya direkt parent_id'si eşit olan
+                $query->where(function ($q) use ($parentCategory) {
+                    // Path'te parent id geçiyorsa veya direkt parent_id eşitse
+                    $q->where('path', 'like', $parentCategory->id . '/%')
+                        ->orWhere('path', 'like', '%/' . $parentCategory->id . '/%')
+                        ->orWhere('path', 'like', '%/' . $parentCategory->id)
+                        ->orWhere('parent_id', $parentCategory->id);
+                    
+                    // Eğer parent'ın kendisi leaf ise, onu da dahil et
+                    if ($parentCategory->is_leaf) {
+                        $q->orWhere('id', $parentCategory->id);
+                    }
+                });
+            }
+        }
+
+        // Arama varsa
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('path', 'like', "%{$search}%");
+            });
+        }
+
+        $categories = $query->orderBy('name')
+            ->limit(100)
+            ->get(['id', 'name', 'path', 'parent_id'])
             ->map(function ($cat) {
                 $fullPath = $cat->name;
                 if ($cat->path) {
@@ -40,31 +85,37 @@ class XmlCategoryMappingController extends Controller
                 }
                 return [
                     'id' => $cat->id,
+                    'text' => $fullPath,
                     'full_path' => $fullPath,
                 ];
             });
 
-        return view('admin.xml.category-mappings.index', compact('feedSources', 'categories'));
+        return response()->json(['results' => $categories]);
     }
 
     public function getData(Request $request)
     {
         $feedSourceId = $request->get('feed_source_id');
         $unmappedOnly = $request->boolean('unmapped_only');
+        $parentCategoryId = $request->get('parent_category_id');
+        $page = $request->get('page', 1);
+        $perPage = 50;
 
         if (!$feedSourceId) {
-            return response()->json([]);
+            return response()->json([
+                'data' => [],
+                'links' => [],
+                'meta' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                ],
+            ]);
         }
 
         $feedSource = FeedSource::findOrFail($feedSourceId);
         $sourceType = strtolower(str_replace(' ', '_', $feedSource->name)) . '_xml';
-
-        Log::debug('XmlCategoryMapping getData', [
-            'feed_source_id' => $feedSourceId,
-            'feed_source_name' => $feedSource->name,
-            'source_type' => $sourceType,
-            'unmapped_only' => $unmappedOnly,
-        ]);
 
         $query = ExternalCategory::with('mapping.category')
             ->where('source_type', $sourceType);
@@ -78,12 +129,11 @@ class XmlCategoryMappingController extends Controller
             });
         }
 
-        $externalCategories = $query->orderBy('raw_path')->get();
+        // Ana kategori filtresi kaldırıldı - sadece kategori seçiminde kullanılacak
+        // External categories listesini filtrelemeyeceğiz, sadece kategori dropdown'ında filtreleme yapacağız
 
-        Log::debug('XmlCategoryMapping getData result', [
-            'count' => $externalCategories->count(),
-            'source_types_in_db' => ExternalCategory::distinct()->pluck('source_type')->toArray(),
-        ]);
+        $externalCategories = $query->orderBy('raw_path')
+            ->paginate($perPage, ['*'], 'page', $page);
 
         $data = $externalCategories->map(function ($ec) {
             return [
@@ -95,7 +145,16 @@ class XmlCategoryMappingController extends Controller
             ];
         });
 
-        return response()->json($data->values()->all());
+        return response()->json([
+            'data' => $data->values()->all(),
+            'links' => $externalCategories->linkCollection(),
+            'meta' => [
+                'current_page' => $externalCategories->currentPage(),
+                'last_page' => $externalCategories->lastPage(),
+                'per_page' => $externalCategories->perPage(),
+                'total' => $externalCategories->total(),
+            ],
+        ]);
     }
 
     public function bulkUpdate(Request $request)
