@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\CategoryMapping;
 use App\Models\ImportItem;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Models\ProductVariant;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -77,28 +78,55 @@ class ImportItemJob implements ShouldQueue
                     throw new \Exception('Payload boş');
                 }
 
-                // Payload'dan verileri çıkar
-                $productTitle = $this->getNestedValue($payload, ['product', 'title']);
-                $productDescription = $this->getNestedValue($payload, ['product', 'description']);
-                $brandName = $this->getNestedValue($payload, ['product', 'brand']);
+                // ============================================
+                // SKU ÜRETİMİ - MERKEZİ BLOK (EN ÖNCE)
+                // ============================================
+                // SKU üretimi kategori/marka kontrollerinden ÖNCE çalışmalı
+                // SKU üretilebildiği sürece ürün oluşturma devam eder
+                $sku = $this->generateSku($payload, $importItem);
+                
+                if ($sku === null || strlen($sku) === 0) {
+                    throw new \Exception('SKU üretilemedi - tüm fallback yöntemleri başarısız');
+                }
+
+                // Payload'dan verileri çıkar - hem nested hem düz yapıyı destekle
+                $productTitle = $this->getNestedValue($payload, ['product', 'title'])
+                    ?? $payload['Ad'] ?? $payload['Title'] ?? $payload['ProductTitle'] ?? null;
+                
+                $productDescription = $this->getNestedValue($payload, ['product', 'description'])
+                    ?? $payload['Aciklama'] ?? $payload['Description'] ?? $payload['Detay'] ?? null;
+                
+                $brandName = $this->getNestedValue($payload, ['product', 'brand'])
+                    ?? $payload['Marka'] ?? $payload['Brand'] ?? null;
+                
+                // Barcode normalize et (boş string → NULL)
+                $barcodeRaw = $this->getNestedValue($payload, ['product', 'barcode'])
+                    ?: ($payload['Barkod'] ?? null)
+                    ?: ($payload['Barcode'] ?? null)
+                    ?: null;
+                $barcode = $this->normalizeBarcode($barcodeRaw);
                 
                 // external_category_id ve raw_path hem root seviyesinde hem de category altında olabilir
                 $externalCategoryId = $this->getNestedValue($payload, ['category', 'external_category_id'])
-                    ?? $this->getNestedValue($payload, ['external_category_id']);
-                $categoryRawPath = $this->getNestedValue($payload, ['category', 'raw_path'])
-                    ?? $this->getNestedValue($payload, ['raw_path']);
+                    ?? $this->getNestedValue($payload, ['external_category_id'])
+                    ?? $payload['external_category_id'] ?? null;
                 
-                $price = $this->getNestedValue($payload, ['pricing', 'price']);
-                $stock = $this->getNestedValue($payload, ['stock']);
-                $attributes = $this->getNestedValue($payload, ['attributes']);
-
-                // SKU kontrolü
-                $sku = $importItem->sku;
-                if (empty($sku)) {
-                    throw new \Exception('SKU bulunamadı');
-                }
+                $categoryRawPath = $this->getNestedValue($payload, ['category', 'raw_path'])
+                    ?? $this->getNestedValue($payload, ['raw_path'])
+                    ?? $payload['raw_path'] ?? null;
+                
+                $price = $this->getNestedValue($payload, ['pricing', 'price'])
+                    ?? $payload['Fiyat_SK'] ?? $payload['Fiyat_Bayi'] ?? $payload['Fiyat'] 
+                    ?? $payload['Price'] ?? null;
+                
+                $stock = $this->getNestedValue($payload, ['stock'])
+                    ?? $payload['Miktar'] ?? $payload['Stock'] ?? $payload['Stok'] ?? null;
+                
+                $attributes = $this->getNestedValue($payload, ['attributes'])
+                    ?? $payload['TeknikOzellikler'] ?? null;
 
                 // 3) Marka işlemi
+                // SKU üretilebildiği için marka eksik olsa bile devam ediyoruz
                 $brandId = null;
                 if (!empty($brandName)) {
                     $brandSlug = Str::slug($brandName, '-', 'tr');
@@ -114,22 +142,15 @@ class ImportItemJob implements ShouldQueue
 
                     $brandId = $brand->id;
                 } else {
-                    // Marka boşsa NEEDS_MAPPING
-                    $importItem->update([
-                        'status' => 'NEEDS_MAPPING',
-                        'error_message' => 'Marka bilgisi bulunamadı',
-                    ]);
-
-                    Log::channel('imports')->warning('Import item needs mapping - missing brand', [
+                    // Marka boşsa log kaydet ama devam et
+                    Log::channel('imports')->warning('Import item missing brand - continuing anyway', [
                         'import_item_id' => $this->importItemId,
                         'product_sku' => $sku,
-                        'status' => 'NEEDS_MAPPING',
                     ]);
-
-                    return;
                 }
 
                 // 4) Kategori işlemi - category_mappings üzerinden
+                // SKU üretilebildiği için kategori eksik olsa bile devam ediyoruz
                 $categoryId = null;
 
                 if (!empty($externalCategoryId)) {
@@ -144,77 +165,48 @@ class ImportItemJob implements ShouldQueue
                             $categoryId = $category->id;
                         } else {
                             if (!$category) {
-                                $importItem->update([
-                                    'status' => 'NEEDS_MAPPING',
-                                    'error_message' => 'Mapped kategori bulunamadı',
-                                ]);
-
-                                Log::channel('imports')->warning('Import item needs mapping - mapped category not found', [
+                                Log::channel('imports')->warning('Import item mapped category not found - continuing anyway', [
                                     'import_item_id' => $this->importItemId,
                                     'product_sku' => $sku,
-                                    'status' => 'NEEDS_MAPPING',
                                     'external_category_id' => $externalCategoryId,
                                     'category_id' => $mapping->category_id,
                                 ]);
-
-                                return;
                             } else {
-                                $importItem->update([
-                                    'status' => 'NEEDS_MAPPING',
-                                    'error_message' => 'Kategori leaf değil: ' . $category->name,
-                                ]);
-
-                                Log::channel('imports')->warning('Import item needs mapping - category is not leaf', [
+                                Log::channel('imports')->warning('Import item category is not leaf - continuing anyway', [
                                     'import_item_id' => $this->importItemId,
                                     'product_sku' => $sku,
-                                    'status' => 'NEEDS_MAPPING',
                                     'category_id' => $category->id,
                                     'category_name' => $category->name,
                                 ]);
-
-                                return;
                             }
                         }
                     } else {
-                        $importItem->update([
-                            'status' => 'NEEDS_MAPPING',
-                            'error_message' => 'Kategori eşleştirmesi bulunamadı: ' . ($categoryRawPath ?? 'N/A'),
-                        ]);
-
-                        Log::channel('imports')->warning('Import item needs mapping - category mapping not found', [
+                        Log::channel('imports')->warning('Import item category mapping not found - continuing anyway', [
                             'import_item_id' => $this->importItemId,
                             'product_sku' => $sku,
-                            'status' => 'NEEDS_MAPPING',
                             'external_category_id' => $externalCategoryId,
                             'category_raw_path' => $categoryRawPath,
                         ]);
-
-                        return;
                     }
                 } else {
-                    $importItem->update([
-                        'status' => 'NEEDS_MAPPING',
-                        'error_message' => 'Kategori bilgisi bulunamadı',
-                    ]);
-
-                    Log::channel('imports')->warning('Import item needs mapping - missing category info', [
+                    Log::channel('imports')->warning('Import item missing category info - continuing anyway', [
                         'import_item_id' => $this->importItemId,
                         'product_sku' => $sku,
-                        'status' => 'NEEDS_MAPPING',
                     ]);
-
-                    return;
                 }
 
                 // 5) Product upsert (sku bazlı)
+                $sourceReference = $this->getNestedValue($payload, ['product', 'external_id'])
+                    ?? $payload['Kod'] ?? $payload['ProductId'] ?? $payload['Id'] ?? null;
+                
                 $product = Product::updateOrCreate(
                     [
                         'source_type' => 'xml',
                         'sku' => $sku,
                     ],
                     [
-                        'source_reference' => $importItem->external_id,
-                        'barcode' => $importItem->barcode,
+                        'source_reference' => $sourceReference,
+                        'barcode' => $barcode,
                         'title' => $productTitle ?? 'Başlıksız Ürün',
                         'description' => $productDescription,
                         'brand_id' => $brandId,
@@ -223,6 +215,7 @@ class ImportItemJob implements ShouldQueue
                         'status' => 'IMPORTED',
                     ]
                 );
+                
 
                 // 6) Product variant oluştur (tek varyant)
                 $variantSku = $sku;
@@ -235,7 +228,7 @@ class ImportItemJob implements ShouldQueue
                         'sku' => $variantSku,
                     ],
                     [
-                        'barcode' => $importItem->barcode,
+                        'barcode' => $barcode,
                         'price' => $variantPrice,
                         'currency' => 'TRY',
                         'stock' => $variantStock,
@@ -243,7 +236,10 @@ class ImportItemJob implements ShouldQueue
                     ]
                 );
 
-                // 7) import_item status güncelle - Başarılı
+                // 7) Product images (resim URL'leri kaydet)
+                $this->saveProductImages($product->id, $payload);
+
+                // 8) import_item status güncelle - Başarılı
                 $importItem->update([
                     'status' => 'UPSERTED',
                 ]);
@@ -289,6 +285,253 @@ class ImportItemJob implements ShouldQueue
         }
 
         return $current;
+    }
+
+    /**
+     * SKU üretimi - fallback sırası ile
+     * 
+     * Fallback sırası:
+     * 1. payload.product.sku
+     * 2. payload.product.stock_code
+     * 3. payload.product.barcode
+     * 4. payload.product.external_id
+     * 5. GN-{feed_run_id}-{import_item_id}
+     * 
+     * @param array $payload
+     * @param ImportItem $importItem
+     * @return string|null
+     */
+    private function generateSku(array $payload, ImportItem $importItem): ?string
+    {
+        // SKU adayları - hem nested hem de düz payload yapısını destekle
+        $skuCandidates = [
+            // İç içe yapı (product.*)
+            $this->getNestedValue($payload, ['product', 'sku']),
+            $this->getNestedValue($payload, ['product', 'stock_code']),
+            $this->getNestedValue($payload, ['product', 'barcode']),
+            $this->getNestedValue($payload, ['product', 'external_id']),
+            
+            // Düz yapı (XML'den gelen - Türkçe field isimleri)
+            $payload['Kod'] ?? null,
+            $payload['StokKodu'] ?? null,
+            $payload['UrunKodu'] ?? null,
+            $payload['Barkod'] ?? null,
+            $payload['Barcode'] ?? null,
+            
+            // İngilizce field isimleri
+            $payload['Sku'] ?? null,
+            $payload['SKU'] ?? null,
+            $payload['ProductCode'] ?? null,
+            $payload['ProductId'] ?? null,
+            $payload['Id'] ?? null,
+            $payload['ExternalId'] ?? null,
+        ];
+
+        // Her adayı kontrol et
+        foreach ($skuCandidates as $candidate) {
+            if ($candidate !== null) {
+                $sku = $this->normalizeSku($candidate);
+                // normalizeSku null dönerse boş string demektir, geçerli SKU varsa döndür
+                if ($sku !== null) {
+                    return $sku;
+                }
+            }
+        }
+
+        // Hiçbiri çalışmadıysa, fallback: GN-{feed_run_id}-{import_item_id}
+        // Bu fallback her zaman geçerli bir SKU üretir
+        $fallbackSku = sprintf('GN-%d-%d', $importItem->feed_run_id ?? 0, $importItem->id ?? 0);
+        $normalizedSku = $this->normalizeSku($fallbackSku);
+        
+        // Fallback kullanıldığını logla
+        if ($normalizedSku !== null) {
+            Log::channel('imports')->info('Using fallback SKU', [
+                'import_item_id' => $importItem->id,
+                'sku' => $normalizedSku,
+            ]);
+        }
+        
+        return $normalizedSku;
+    }
+
+    /**
+     * SKU normalizasyonu
+     * - trim edilir
+     * - boş string kontrolü (empty() değil, strlen() ile)
+     * - max 64 karakter
+     * 
+     * @param mixed $sku
+     * @return string|null
+     */
+    private function normalizeSku($sku): ?string
+    {
+        // String'e çevir
+        $sku = (string) $sku;
+        
+        // Trim et
+        $sku = trim($sku);
+        
+        // Boş string kontrolü - strlen() kullan (empty() "0" için true döner)
+        if (strlen($sku) === 0) {
+            return null;
+        }
+        
+        // Max 64 karakter
+        if (strlen($sku) > 64) {
+            $sku = substr($sku, 0, 64);
+        }
+        
+        return $sku;
+    }
+
+    /**
+     * Barcode normalizasyonu
+     * - null veya boş string → NULL
+     * - string ise trim edilir
+     * - trim sonrası boş string → NULL
+     * 
+     * UNIQUE constraint (uq_barcode) için kritik:
+     * Boş string ('') asla DB'ye yazılmamalı, mutlaka NULL olmalı
+     * 
+     * @param mixed $barcode
+     * @return string|null
+     */
+    private function normalizeBarcode($barcode): ?string
+    {
+        if ($barcode === null || $barcode === '') {
+            return null;
+        }
+        
+        $barcode = (string) $barcode;
+        $barcode = trim($barcode);
+        
+        if ($barcode === '' || strlen($barcode) === 0) {
+            return null;
+        }
+        
+        return $barcode;
+    }
+
+    /**
+     * Ürün resim URL'lerini kaydet (indirme YOK, sadece link)
+     * 
+     * @param int $productId
+     * @param array $payload
+     * @return void
+     */
+    private function saveProductImages(int $productId, array $payload): void
+    {
+        $imageUrls = [];
+        
+        // AnaResim (ana resim, sort_order = 0)
+        $anaResim = $payload['AnaResim'] ?? null;
+        if ($this->isValidImageUrl($anaResim)) {
+            $imageUrls[] = [
+                'url' => trim($anaResim),
+                'sort_order' => 0,
+            ];
+        }
+        
+        // UrunResimleri (ek resimler)
+        $sortOrder = 1;
+        if (isset($payload['urunResimleri']['UrunResimler'])) {
+            $urunResimler = $payload['urunResimleri']['UrunResimler'];
+            
+            // UrunResimler array mi (birden fazla resim) yoksa tek obje mi?
+            if (isset($urunResimler[0])) {
+                // Array of objects: [{"UrunKodu": "...", "Resim": "..."}, ...]
+                foreach ($urunResimler as $resimObj) {
+                    $resimUrl = $resimObj['Resim'] ?? null;
+                    
+                    if ($this->isValidImageUrl($resimUrl)) {
+                        $resimUrl = trim($resimUrl);
+                        
+                        // Duplicate kontrolü (AnaResim ile aynı olabilir)
+                        $alreadyExists = false;
+                        foreach ($imageUrls as $existing) {
+                            if ($existing['url'] === $resimUrl) {
+                                $alreadyExists = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!$alreadyExists) {
+                            $imageUrls[] = [
+                                'url' => $resimUrl,
+                                'sort_order' => $sortOrder++,
+                            ];
+                        }
+                    }
+                }
+            } else {
+                // Single object: {"UrunKodu": "...", "Resim": "..."}
+                $resimUrl = $urunResimler['Resim'] ?? null;
+                
+                if ($this->isValidImageUrl($resimUrl)) {
+                    $resimUrl = trim($resimUrl);
+                    
+                    // Duplicate kontrolü
+                    $alreadyExists = false;
+                    foreach ($imageUrls as $existing) {
+                        if ($existing['url'] === $resimUrl) {
+                            $alreadyExists = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$alreadyExists) {
+                        $imageUrls[] = [
+                            'url' => $resimUrl,
+                            'sort_order' => $sortOrder++,
+                        ];
+                    }
+                }
+            }
+        }
+        
+        // Resim yoksa skip
+        if (empty($imageUrls)) {
+            return;
+        }
+        
+        // Her resim URL'i için upsert
+        foreach ($imageUrls as $imageData) {
+            ProductImage::updateOrCreate(
+                [
+                    'product_id' => $productId,
+                    'url' => $imageData['url'],
+                ],
+                [
+                    'sort_order' => $imageData['sort_order'],
+                ]
+            );
+        }
+    }
+
+    /**
+     * URL validasyonu (basit kontrol)
+     * 
+     * @param mixed $url
+     * @return bool
+     */
+    private function isValidImageUrl($url): bool
+    {
+        if ($url === null || $url === '') {
+            return false;
+        }
+        
+        $url = trim((string) $url);
+        
+        if (strlen($url) === 0) {
+            return false;
+        }
+        
+        // http veya https ile başlıyor mu
+        if (!str_starts_with($url, 'http://') && !str_starts_with($url, 'https://')) {
+            return false;
+        }
+        
+        return true;
     }
 }
 

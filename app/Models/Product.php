@@ -57,5 +57,13 @@ class Product extends Model
     {
         return $this->hasMany(ProductVariant::class, 'product_id');
     }
+
+    /**
+     * Product images ilişkisi
+     */
+    public function images()
+    {
+        return $this->hasMany(ProductImage::class, 'product_id')->orderBy('sort_order');
+    }
 }
 

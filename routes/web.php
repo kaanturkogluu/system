@@ -9,6 +9,11 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+// Login route for auth middleware redirect
+Route::get('/login', function () {
+    return redirect()->route('admin.login');
+})->name('login');
+
 // Admin Routes
 Route::prefix('admin')->name('admin.')->group(function () {
     // Auth Routes
@@ -39,5 +44,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('/category-mappings/categories', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'getCategories'])->name('category-mappings.categories');
             Route::post('/category-mappings/bulk', [\App\Http\Controllers\Admin\XmlCategoryMappingController::class, 'bulkUpdate'])->name('category-mappings.bulk');
         });
+        
+        // XML Products
+        Route::get('/xml-products', [\App\Http\Controllers\Admin\XmlProductController::class, 'index'])->name('xml-products.index');
+        Route::get('/xml-products/{id}', [\App\Http\Controllers\Admin\XmlProductController::class, 'show'])->name('xml-products.show');
     });
 });
