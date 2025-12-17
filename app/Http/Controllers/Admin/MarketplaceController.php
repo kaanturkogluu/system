@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Marketplace;
+use App\Models\MarketplaceSetting;
+use App\Helpers\MarketplaceConfig;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -97,6 +99,48 @@ class MarketplaceController extends Controller
 
         return redirect()->route('admin.marketplaces.index')
             ->with('success', 'Pazaryeri başarıyla silindi.');
+    }
+
+    /**
+     * Show marketplace settings form
+     */
+    public function settings(Marketplace $marketplace)
+    {
+        $settings = MarketplaceSetting::where('marketplace_id', $marketplace->id)
+            ->pluck('value', 'key')
+            ->toArray();
+
+        return view('admin.marketplaces.settings', compact('marketplace', 'settings'));
+    }
+
+    /**
+     * Update marketplace settings
+     */
+    public function updateSettings(Request $request, Marketplace $marketplace)
+    {
+        $validated = $request->validate([
+            'settings' => 'required|array',
+            'settings.*' => 'nullable|string',
+        ]);
+
+        foreach ($validated['settings'] as $key => $value) {
+            MarketplaceSetting::updateOrCreate(
+                [
+                    'marketplace_id' => $marketplace->id,
+                    'key' => $key,
+                ],
+                [
+                    'value' => $value ?: null,
+                    'is_sensitive' => in_array($key, ['api_key', 'api_secret', 'password', 'token']),
+                ]
+            );
+        }
+
+        // Clear cache after update
+        MarketplaceConfig::clearCache($marketplace->slug);
+
+        return redirect()->route('admin.marketplaces.settings', $marketplace)
+            ->with('success', 'Ayarlar başarıyla güncellendi.');
     }
 }
 

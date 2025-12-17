@@ -28,6 +28,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         
         // Marketplaces
         Route::resource('marketplaces', \App\Http\Controllers\Admin\MarketplaceController::class);
+        Route::get('/marketplaces/{marketplace}/settings', [\App\Http\Controllers\Admin\MarketplaceController::class, 'settings'])->name('marketplaces.settings');
+        Route::post('/marketplaces/{marketplace}/settings', [\App\Http\Controllers\Admin\MarketplaceController::class, 'updateSettings'])->name('marketplaces.settings.update');
         
         // Feed Sources
         Route::resource('feed-sources', \App\Http\Controllers\Admin\FeedSourceController::class);
@@ -48,5 +50,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // XML Products
         Route::get('/xml-products', [\App\Http\Controllers\Admin\XmlProductController::class, 'index'])->name('xml-products.index');
         Route::get('/xml-products/{id}', [\App\Http\Controllers\Admin\XmlProductController::class, 'show'])->name('xml-products.show');
+        
+        // Brand Mappings
+        Route::get('/brand-mappings', [\App\Http\Controllers\Admin\BrandMappingController::class, 'index'])->name('brand-mappings.index');
+        Route::get('/brand-mappings/{brand}/marketplace/{marketplace}/search-results', [\App\Http\Controllers\Admin\BrandMappingController::class, 'showSearchResults'])->name('brand-mappings.search-results');
+        Route::post('/brand-mappings/{brand}/marketplace/{marketplace}', [\App\Http\Controllers\Admin\BrandMappingController::class, 'store'])->name('brand-mappings.store');
+        Route::delete('/brand-mappings/{brand}/marketplace/{marketplace}', [\App\Http\Controllers\Admin\BrandMappingController::class, 'destroy'])->name('brand-mappings.destroy');
+        Route::post('/brand-mappings/auto-map', [\App\Http\Controllers\Admin\BrandMappingController::class, 'autoMap'])->name('brand-mappings.auto-map');
     });
 });

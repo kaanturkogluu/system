@@ -24,5 +24,10 @@ class Marketplace extends Model
     {
         return $this->hasMany(MarketplaceBrandMapping::class, 'marketplace_id');
     }
+
+    public function settings()
+    {
+        return $this->hasMany(MarketplaceSetting::class, 'marketplace_id');
+    }
 }
 
