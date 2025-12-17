@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('category_mappings')) {
+            return;
+        }
+
         Schema::create('category_mappings', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('external_category_id');

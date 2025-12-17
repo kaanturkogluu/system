@@ -12,11 +12,17 @@ class Marketplace extends Model
     protected $table = 'marketplaces';
 
     public $incrementing = true;
-    public $timestamps = false;
+    public $timestamps = true;
 
     protected $fillable = [
         'name',
         'slug',
+        'status',
     ];
+
+    public function brandMappings()
+    {
+        return $this->hasMany(MarketplaceBrandMapping::class, 'marketplace_id');
+    }
 }
 

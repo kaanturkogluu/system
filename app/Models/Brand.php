@@ -13,11 +13,23 @@ class Brand extends Model
 
     protected $fillable = [
         'name',
+        'normalized_name',
         'slug',
+        'status',
     ];
 
     protected $casts = [
         'id' => 'integer',
     ];
+
+    public function products()
+    {
+        return $this->hasMany(Product::class, 'brand_id');
+    }
+
+    public function marketplaceMappings()
+    {
+        return $this->hasMany(MarketplaceBrandMapping::class, 'brand_id');
+    }
 }
 

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Helpers\BrandNormalizer;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\CategoryMapping;
@@ -129,16 +130,17 @@ class ImportItemJob implements ShouldQueue
                 // SKU üretilebildiği için marka eksik olsa bile devam ediyoruz
                 $brandId = null;
                 if (!empty($brandName)) {
-                    $brandSlug = Str::slug($brandName, '-', 'tr');
-                    $brand = Brand::where('slug', $brandSlug)->first();
-
-                    if (!$brand) {
-                        // Marka yoksa oluştur
-                        $brand = Brand::create([
+                    $normalizedName = BrandNormalizer::normalize($brandName);
+                    $brandSlug = BrandNormalizer::slug($brandName);
+                    
+                    $brand = Brand::firstOrCreate(
+                        ['normalized_name' => $normalizedName],
+                        [
                             'name' => $brandName,
                             'slug' => $brandSlug,
-                        ]);
-                    }
+                            'status' => 'active',
+                        ]
+                    );
 
                     $brandId = $brand->id;
                 } else {

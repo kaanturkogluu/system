@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('external_categories')) {
+            return;
+        }
+
         Schema::create('external_categories', function (Blueprint $table) {
             $table->id();
             $table->string('source_type', 50);
