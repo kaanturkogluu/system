@@ -16,6 +16,8 @@ class ImportItem extends Model
         'external_id',
         'sku',
         'barcode',
+        'product_code',
+        'external_category_id',
         'payload',
         'hash',
         'status',

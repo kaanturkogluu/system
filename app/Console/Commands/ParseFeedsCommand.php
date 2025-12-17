@@ -246,6 +246,8 @@ class ParseFeedsCommand extends Command
                 'external_id' => $this->extractValue($xml, ['ProductId', 'ExternalId', 'Id']),
                 'sku' => $this->extractValue($xml, ['Sku', 'SKU', 'ProductCode']),
                 'barcode' => $this->extractValue($xml, ['Barcode', 'Barkod', 'GTIN']),
+                'product_code' => $payload['Kod'] ?? null,
+                'external_category_id' => $externalCategoryId,
                 'payload' => $payload,
                 'hash' => $hash,
                 'status' => 'PENDING',
