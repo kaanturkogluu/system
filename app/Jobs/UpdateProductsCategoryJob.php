@@ -60,35 +60,41 @@ class UpdateProductsCategoryJob implements ShouldQueue
         DB::beginTransaction();
         
         try {
-            // Bulk update using indexed columns for performance
+            // Bulk update using correct JOIN: import_items.id = products.source_reference
+            // Also join with category_mappings to ensure status = 'mapped'
+            // Use cm.category_id from the mapping table to ensure consistency
+            // Verify mapping's category_id matches expected value for safety
             $affectedRows = DB::update("
                 UPDATE products p
-                INNER JOIN import_items ii ON ii.product_code = p.source_reference
-                SET p.category_id = ?
+                INNER JOIN import_items ii ON ii.id = p.source_reference
+                INNER JOIN category_mappings cm ON cm.external_category_id = ii.external_category_id
+                SET p.category_id = cm.category_id
                 WHERE p.source_type = 'xml'
                   AND p.category_id IS NULL
-                  AND ii.external_category_id = ?
+                  AND cm.external_category_id = ?
+                  AND cm.category_id = ?
+                  AND cm.status = 'mapped'
             ", [
-                $this->categoryId,
                 $this->externalCategoryId,
+                $this->categoryId,
             ]);
             
             DB::commit();
             
-            // Count total products with this external_category_id
+            // Count total products with this external_category_id (using correct JOIN)
             $totalProductsWithExternalCategory = DB::selectOne("
                 SELECT COUNT(*) as count
                 FROM products p
-                INNER JOIN import_items ii ON ii.product_code = p.source_reference
+                INNER JOIN import_items ii ON ii.id = p.source_reference
                 WHERE p.source_type = 'xml'
                   AND ii.external_category_id = ?
             ", [$this->externalCategoryId])->count ?? 0;
             
-            // Count products still unmatched (category_id IS NULL)
+            // Count products still unmatched (category_id IS NULL) with correct JOIN
             $productsStillUnmatched = DB::selectOne("
                 SELECT COUNT(*) as count
                 FROM products p
-                INNER JOIN import_items ii ON ii.product_code = p.source_reference
+                INNER JOIN import_items ii ON ii.id = p.source_reference
                 WHERE p.source_type = 'xml'
                   AND p.category_id IS NULL
                   AND ii.external_category_id = ?
@@ -118,6 +124,7 @@ class UpdateProductsCategoryJob implements ShouldQueue
                 'external_category_id' => $this->externalCategoryId,
                 'category_id' => $this->categoryId,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             
             throw $e;

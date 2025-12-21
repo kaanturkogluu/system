@@ -143,6 +143,23 @@
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <div class="flex items-center space-x-3">
+                                    @if($feedSource->is_active)
+                                        <form 
+                                            method="POST" 
+                                            action="{{ route('admin.feed-runs.trigger') }}"
+                                            class="inline"
+                                        >
+                                            @csrf
+                                            <input type="hidden" name="feed_source_id" value="{{ $feedSource->id }}">
+                                            <button 
+                                                type="submit"
+                                                class="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300"
+                                                title="Feed'i İndir"
+                                            >
+                                                İndir
+                                            </button>
+                                        </form>
+                                    @endif
                                     <a 
                                         href="{{ route('admin.feed-runs.index', ['feed_source_id' => $feedSource->id]) }}" 
                                         class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"

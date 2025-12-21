@@ -33,10 +33,11 @@ class ParseFeedsCommand extends Command
     {
         $this->info('XML parse işlemi başlatılıyor...');
 
-        // DONE durumunda ve file_path'i olan feed_run'ları al
-        $feedRuns = FeedRun::where('status', 'DONE')
+        // PENDING durumunda ve file_path'i olan feed_run'ları al
+        $feedRuns = FeedRun::where('status', 'PENDING')
             ->whereNotNull('file_path')
             ->with('feedSource')
+            ->orderBy('id', 'asc')
             ->get();
 
         if ($feedRuns->isEmpty()) {
@@ -81,29 +82,34 @@ class ParseFeedsCommand extends Command
     private function parseFeedRun(FeedRun $feedRun): array
     {
         $filePath = $feedRun->file_path;
-
-        // Dosya var mı kontrol et
-        if (!Storage::exists($filePath)) {
-            $error = "Dosya bulunamadı: {$filePath}";
-            $this->markFeedRunAsFailed($feedRun, $error);
-            return ['success' => false, 'error' => $error];
-        }
-
-        $fullPath = Storage::path($filePath);
-
-        // XMLReader ile stream okuma
-        $reader = new XMLReader();
-        
-        if (!$reader->open($fullPath)) {
-            $error = "XML dosyası açılamadı: {$filePath}";
-            $this->markFeedRunAsFailed($feedRun, $error);
-            return ['success' => false, 'error' => $error];
-        }
-
-        $itemsCount = 0;
-        $skippedCount = 0;
+        $reader = null;
 
         try {
+            // Status'u RUNNING'e çevir ve started_at'i set et
+            $feedRun->update([
+                'status' => 'RUNNING',
+                'started_at' => now(),
+            ]);
+
+            // Dosya var mı kontrol et
+            if (!Storage::exists($filePath)) {
+                $error = "Dosya bulunamadı: {$filePath}";
+                throw new Exception($error);
+            }
+
+            $fullPath = Storage::path($filePath);
+
+            // XMLReader ile stream okuma
+            $reader = new XMLReader();
+            
+            if (!$reader->open($fullPath)) {
+                $error = "XML dosyası açılamadı: {$filePath}";
+                throw new Exception($error);
+            }
+
+            $itemsCount = 0;
+            $skippedCount = 0;
+
             // XMLUrunView node'larını bul
             while ($reader->read()) {
                 if ($reader->nodeType === XMLReader::ELEMENT && $reader->localName === 'XMLUrunView') {
@@ -121,7 +127,7 @@ class ParseFeedsCommand extends Command
                 }
             }
 
-            // Parse işlemi başarılı, feed_run'ı güncelle
+            // Parse işlemi başarılı, feed_run'ı PARSED olarak güncelle
             $feedRun->update([
                 'status' => 'PARSED',
                 'ended_at' => now(),
@@ -142,10 +148,34 @@ class ParseFeedsCommand extends Command
             ];
 
         } catch (\Exception $e) {
-            $this->markFeedRunAsFailed($feedRun, $e->getMessage());
+            // Hata durumunda FAILED olarak işaretle
+            $feedRun->update([
+                'status' => 'FAILED',
+                'ended_at' => now(),
+            ]);
+
+            Log::channel('imports')->error('Feed run parse failed', [
+                'feed_run_id' => $feedRun->id,
+                'feed_id' => $feedRun->feed_source_id,
+                'file_path' => $filePath,
+                'error' => $e->getMessage(),
+            ]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         } finally {
-            $reader->close();
+            // XMLReader'ı kapat
+            if ($reader) {
+                $reader->close();
+            }
+
+            // Güvenlik için: Eğer hala RUNNING durumundaysa FAILED yap
+            $feedRun->refresh();
+            if ($feedRun->status === 'RUNNING') {
+                $feedRun->update([
+                    'status' => 'FAILED',
+                    'ended_at' => now(),
+                ]);
+            }
         }
     }
 
@@ -561,6 +591,7 @@ class ParseFeedsCommand extends Command
 
     /**
      * Mark feed run as failed
+     * Note: This method is kept for backward compatibility but parseFeedRun now handles failures internally
      */
     private function markFeedRunAsFailed(FeedRun $feedRun, string $error): void
     {
