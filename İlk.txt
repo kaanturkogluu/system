@@ -1,1 +1,4 @@
 test@example.com - password
+
+Markalara xml entegresi sırasında otomatik kayıt aliyor 
+php artisan app:trendyol-brand-sync  ->  sistemdeki markaların trendyol karslılığı %100 eslesenler eşleştiriliyor 
