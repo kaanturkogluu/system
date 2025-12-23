@@ -262,12 +262,50 @@
                                 @endif
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <a 
-                                    href="{{ route('admin.feed-runs.show', $feedRun) }}" 
-                                    class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
-                                >
-                                    Detay
-                                </a>
+                                <div class="flex items-center space-x-2">
+                                    <a 
+                                        href="{{ route('admin.feed-runs.show', $feedRun) }}" 
+                                        class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
+                                    >
+                                        Detay
+                                    </a>
+                                    
+                                    @if(($feedRun->status === 'PENDING' || $feedRun->status === 'DONE') && $feedRun->file_path)
+                                        <form 
+                                            method="POST" 
+                                            action="{{ route('admin.feed-runs.parse', $feedRun) }}"
+                                            class="inline"
+                                            onsubmit="return confirm('Bu feed run\'ı parse etmek istediğinizden emin misiniz?');"
+                                        >
+                                            @csrf
+                                            <button 
+                                                type="submit"
+                                                class="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300 font-medium"
+                                                title="Parse Başlat"
+                                            >
+                                                Parse Başlat
+                                            </button>
+                                        </form>
+                                    @endif
+                                    
+                                    @if($feedRun->status === 'PARSED')
+                                        <form 
+                                            method="POST" 
+                                            action="{{ route('admin.feed-runs.dispatch', $feedRun) }}"
+                                            class="inline"
+                                            onsubmit="return confirm('Bu feed run için import işlemlerini başlatmak istediğinizden emin misiniz?');"
+                                        >
+                                            @csrf
+                                            <button 
+                                                type="submit"
+                                                class="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 font-medium"
+                                                title="İçeriye Aktar"
+                                            >
+                                                İçeriye Aktar
+                                            </button>
+                                        </form>
+                                    @endif
+                                </div>
                             </td>
                         </tr>
                     @empty

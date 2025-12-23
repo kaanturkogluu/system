@@ -38,6 +38,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/feed-runs', [\App\Http\Controllers\Admin\FeedRunController::class, 'index'])->name('feed-runs.index');
         Route::get('/feed-runs/{feedRun}', [\App\Http\Controllers\Admin\FeedRunController::class, 'show'])->name('feed-runs.show');
         Route::post('/feed-runs/trigger', [\App\Http\Controllers\Admin\FeedRunController::class, 'triggerDownload'])->name('feed-runs.trigger');
+        Route::post('/feed-runs/{feedRun}/parse', [\App\Http\Controllers\Admin\FeedRunController::class, 'parseFeedRun'])->name('feed-runs.parse');
+        Route::post('/feed-runs/{feedRun}/dispatch', [\App\Http\Controllers\Admin\FeedRunController::class, 'dispatchImports'])->name('feed-runs.dispatch');
+        Route::post('/feed-runs/dispatch-all', [\App\Http\Controllers\Admin\FeedRunController::class, 'dispatchImports'])->name('feed-runs.dispatch-all');
         
         // XML Category Mappings
         Route::prefix('xml')->name('xml.')->group(function () {

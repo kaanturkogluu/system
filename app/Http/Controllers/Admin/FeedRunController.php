@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\FeedRun;
 use App\Models\FeedSource;
+use App\Models\ImportItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -246,6 +249,139 @@ class FeedRunController extends Controller
                 'file_size' => null,
                 'error' => $e->getMessage(),
             ];
+        }
+    }
+
+    /**
+     * Parse a specific feed run
+     */
+    public function parseFeedRun(FeedRun $feedRun)
+    {
+        try {
+            // Kontroller
+            if ($feedRun->status !== 'PENDING' && $feedRun->status !== 'DONE') {
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('error', "Feed Run #{$feedRun->id} parse edilemez. Durum: {$feedRun->status}");
+            }
+
+            if (!$feedRun->file_path || !Storage::exists($feedRun->file_path)) {
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('error', "Feed Run #{$feedRun->id} için dosya bulunamadı.");
+            }
+
+            // ParseFeedsCommand'daki parseFeedRun methodunu kullan
+            // Önce command instance'ı oluştur
+            $command = new \App\Console\Commands\ParseFeedsCommand();
+            
+            // Reflection kullanarak private method'a eriş
+            $reflection = new \ReflectionClass($command);
+            $method = $reflection->getMethod('parseFeedRun');
+            $method->setAccessible(true);
+            
+            // Parse işlemini başlat
+            $result = $method->invoke($command, $feedRun);
+            
+            if ($result['success']) {
+                $feedRun->refresh();
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('success', "Feed Run #{$feedRun->id} başarıyla parse edildi. {$result['items_count']} item eklendi.");
+            } else {
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('error', "Feed Run #{$feedRun->id} parse edilemedi: {$result['error']}");
+            }
+
+        } catch (\Exception $e) {
+            Log::channel('imports')->error('Feed run parse failed via admin panel', [
+                'feed_run_id' => $feedRun->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return redirect()->route('admin.feed-runs.index')
+                ->with('error', 'Parse işlemi sırasında hata oluştu: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Dispatch imports for a specific feed run or all pending imports
+     */
+    public function dispatchImports(FeedRun $feedRun = null)
+    {
+        try {
+            if ($feedRun) {
+                // Belirli bir feed run için dispatch
+                $importItemsCount = ImportItem::where('feed_run_id', $feedRun->id)
+                    ->where('status', 'PENDING')
+                    ->count();
+
+                if ($importItemsCount === 0) {
+                    return redirect()->route('admin.feed-runs.index')
+                        ->with('info', "Feed Run #{$feedRun->id} için PENDING import item bulunamadı.");
+                }
+
+                // Sadece bu feed run'a ait PENDING item'ları dispatch et
+                $dispatched = 0;
+                ImportItem::where('feed_run_id', $feedRun->id)
+                    ->where('status', 'PENDING')
+                    ->chunk(1000, function ($items) use (&$dispatched) {
+                        foreach ($items as $item) {
+                            \App\Jobs\ImportItemJob::dispatch($item->id)->onQueue('imports');
+                            $dispatched++;
+                        }
+                    });
+
+                // Queue worker'ı başlat
+                $this->startQueueWorker();
+
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('success', "Feed Run #{$feedRun->id} için {$dispatched} import item dispatch edildi ve queue worker başlatıldı.");
+            } else {
+                // Tüm PENDING import item'lar için dispatch
+                Artisan::call('app:imports:dispatch', [
+                    '--auto-start' => true,
+                ]);
+
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('success', 'Tüm PENDING import item\'lar dispatch edildi ve queue worker başlatıldı.');
+            }
+
+        } catch (\Exception $e) {
+            Log::channel('imports')->error('Dispatch imports failed via admin panel', [
+                'feed_run_id' => $feedRun?->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return redirect()->route('admin.feed-runs.index')
+                ->with('error', 'Dispatch işlemi sırasında hata oluştu: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Start queue worker in background
+     */
+    private function startQueueWorker(): void
+    {
+        $phpPath = PHP_BINARY;
+        $artisanPath = base_path('artisan');
+        $command = "queue:work database --queue=imports --tries=3 --timeout=300 --stop-when-empty";
+        
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $fullCommand = sprintf(
+                'start /B "" "%s" "%s" %s',
+                $phpPath,
+                $artisanPath,
+                $command
+            );
+            exec($fullCommand . ' 2>&1');
+        } else {
+            $fullCommand = sprintf(
+                'nohup %s %s %s > /dev/null 2>&1 &',
+                $phpPath,
+                escapeshellarg($artisanPath),
+                $command
+            );
+            exec($fullCommand);
         }
     }
 }
