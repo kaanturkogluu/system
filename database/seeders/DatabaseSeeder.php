@@ -25,5 +25,11 @@ class DatabaseSeeder extends Seeder
                 'password' => Hash::make('password'),
             ]
         );
+
+        // Pazaryerlerini ekle
+        $this->call([
+            MarketplaceSeeder::class,
+            FeedSourceSeeder::class,
+        ]);
     }
 }
