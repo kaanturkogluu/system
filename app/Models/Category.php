@@ -61,5 +61,23 @@ class Category extends Model
     {
         return $this->children()->where('is_active', true);
     }
+
+    /**
+     * Get attributes for this category
+     */
+    public function attributes()
+    {
+        return $this->belongsToMany(Attribute::class, 'category_attributes', 'category_id', 'attribute_id')
+            ->withPivot('is_required')
+            ->withTimestamps();
+    }
+
+    /**
+     * Get category attributes pivot
+     */
+    public function categoryAttributes()
+    {
+        return $this->hasMany(CategoryAttribute::class, 'category_id');
+    }
 }
 

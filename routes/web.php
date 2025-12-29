@@ -26,6 +26,17 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('/categories', [\App\Http\Controllers\Admin\CategoryController::class, 'index'])->name('categories.index');
         
+        // Attributes
+        Route::resource('attributes', \App\Http\Controllers\Admin\AttributeController::class);
+        
+        // Category Attributes
+        Route::prefix('category-attributes')->name('category-attributes.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\CategoryAttributeController::class, 'index'])->name('index');
+            Route::post('/{category}', [\App\Http\Controllers\Admin\CategoryAttributeController::class, 'store'])->name('store');
+            Route::put('/{categoryAttribute}', [\App\Http\Controllers\Admin\CategoryAttributeController::class, 'update'])->name('update');
+            Route::delete('/{categoryAttribute}', [\App\Http\Controllers\Admin\CategoryAttributeController::class, 'destroy'])->name('destroy');
+        });
+        
         // Marketplaces
         Route::resource('marketplaces', \App\Http\Controllers\Admin\MarketplaceController::class);
         Route::get('/marketplaces/{marketplace}/settings', [\App\Http\Controllers\Admin\MarketplaceController::class, 'settings'])->name('marketplaces.settings');
