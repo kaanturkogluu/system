@@ -36,6 +36,15 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::put('/{categoryAttribute}', [\App\Http\Controllers\Admin\CategoryAttributeController::class, 'update'])->name('update');
             Route::delete('/{categoryAttribute}', [\App\Http\Controllers\Admin\CategoryAttributeController::class, 'destroy'])->name('destroy');
         });
+
+        // Marketplace Category Mappings
+        Route::prefix('marketplace-category-mappings')->name('marketplace-category-mappings.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'index'])->name('index');
+            Route::post('/update', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'update'])->name('update');
+            Route::post('/bulk-update', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'bulkUpdate'])->name('bulk-update');
+            Route::get('/categories', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'getCategories'])->name('categories');
+            Route::post('/import-attributes', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'importAttributes'])->name('import-attributes');
+        });
         
         // Marketplaces
         Route::resource('marketplaces', \App\Http\Controllers\Admin\MarketplaceController::class);
