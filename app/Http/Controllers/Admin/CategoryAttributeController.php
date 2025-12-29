@@ -25,10 +25,16 @@ class CategoryAttributeController extends Controller
                 ->get();
         }
 
+        // Load all categories recursively
         $categories = Category::whereNull('parent_id')
-            ->with('children')
+            ->with(['children' => function ($query) {
+                $query->orderBy('name');
+            }])
             ->orderBy('name')
             ->get();
+        
+        // Recursively load all nested children
+        $this->loadChildrenRecursively($categories);
 
         $allAttributes = Attribute::where('status', 'active')
             ->orderBy('name')
@@ -78,6 +84,21 @@ class CategoryAttributeController extends Controller
         $categoryAttribute->delete();
 
         return back()->with('success', 'Özellik kategoriden kaldırıldı.');
+    }
+
+    /**
+     * Recursively load all children for categories
+     */
+    private function loadChildrenRecursively($categories)
+    {
+        foreach ($categories as $category) {
+            if ($category->children->count() > 0) {
+                $category->load(['children' => function ($query) {
+                    $query->orderBy('name');
+                }]);
+                $this->loadChildrenRecursively($category->children);
+            }
+        }
     }
 }
 
