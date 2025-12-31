@@ -105,6 +105,21 @@
                     <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Kategori:</dt>
                     <dd class="text-sm text-gray-900 dark:text-gray-100">{{ $product->category->name ?? '—' }}</dd>
                 </div>
+                <div class="flex justify-between">
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Menşei:</dt>
+                    <dd class="text-sm text-gray-900 dark:text-gray-100">
+                        @if($product->brand && $product->brand->originCountry)
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                {{ $product->brand->originCountry->name }} ({{ $product->brand->originCountry->code }})
+                            </span>
+                        @else
+                            <span class="text-gray-400">—</span>
+                        @endif
+                    </dd>
+                </div>
             </dl>
         </div>
 

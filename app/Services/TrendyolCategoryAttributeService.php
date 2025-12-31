@@ -178,6 +178,11 @@ class TrendyolCategoryAttributeService
                     continue;
                 }
 
+                // Skip "Menşei" attribute (ID: 1192) - it's handled separately via marketplace_country_mappings
+                if ($trendyolAttributeId == 1192 || strtolower(trim($trendyolAttributeName)) === 'menşei') {
+                    continue;
+                }
+
                 // Determine data type
                 $attributeValues = $categoryAttribute['attributeValues'] ?? [];
                 $allowCustom = $categoryAttribute['allowCustom'] ?? false;
@@ -218,8 +223,8 @@ class TrendyolCategoryAttributeService
                     $stats['attributes_created']++;
                 }
 
-                // Handle enum values
-                if ($dataType === 'enum' && !empty($attributeValues)) {
+                // Handle enum values (skip if this is Menşei attribute)
+                if ($dataType === 'enum' && !empty($attributeValues) && $trendyolAttributeId != 1192 && strtolower(trim($trendyolAttributeName)) !== 'menşei') {
                     $this->syncAttributeValues($attribute, $attributeValues, $stats);
                 }
 
@@ -259,6 +264,11 @@ class TrendyolCategoryAttributeService
      */
     private function syncAttributeValues(Attribute $attribute, array $attributeValues, array &$stats): void
     {
+        // Skip if this is the "Menşei" attribute
+        if ($attribute->name === 'Menşei' || strtolower(trim($attribute->name)) === 'menşei') {
+            return;
+        }
+
         $existingValues = $attribute->allValues()->pluck('normalized_value', 'id')->toArray();
         $processedValues = [];
 
@@ -266,6 +276,11 @@ class TrendyolCategoryAttributeService
             $displayValue = $valueData['name'] ?? '';
             
             if (empty($displayValue)) {
+                continue;
+            }
+
+            // Skip "Menşei" related values
+            if (strtolower(trim($displayValue)) === 'menşei') {
                 continue;
             }
 
