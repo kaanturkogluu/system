@@ -101,6 +101,14 @@ class BrandMappingController extends Controller
         if ($searchResult && $searchResult->response) {
             $response = $searchResult->response;
             
+            // Convert string to array if needed
+            if (is_string($response)) {
+                $response = json_decode($response, true);
+                if (json_last_error() !== JSON_ERROR_NONE || !is_array($response)) {
+                    $response = [];
+                }
+            }
+            
             // Handle different response structures
             if (isset($response['content']) && is_array($response['content'])) {
                 // If response has 'content' array
@@ -190,6 +198,15 @@ class BrandMappingController extends Controller
 
         // Validate the selected brand_id exists in search results
         $response = $searchResult->response ?? [];
+        
+        // Convert string to array if needed
+        if (is_string($response)) {
+            $response = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($response)) {
+                $response = [];
+            }
+        }
+        
         $validBrandIds = [];
         
         if (isset($response['content']) && is_array($response['content'])) {
@@ -315,7 +332,16 @@ class BrandMappingController extends Controller
                 }
 
                 // Parse marketplace brands from response
-                $marketplaceBrands = $this->parseMarketplaceBrands($searchResult->response);
+                // Convert response to array if it's a JSON string
+                $response = $searchResult->response;
+                if (is_string($response)) {
+                    $response = json_decode($response, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        $skipped++;
+                        continue;
+                    }
+                }
+                $marketplaceBrands = $this->parseMarketplaceBrands($response);
 
                 if (empty($marketplaceBrands)) {
                     $skipped++;
@@ -324,12 +350,15 @@ class BrandMappingController extends Controller
 
                 // Find 100% match
                 $matchedBrand = null;
-                $brandNormalized = $brand->normalized_name;
+                
+                // Always normalize from actual brand name (more reliable than DB normalized_name)
+                // This ensures we're comparing against the actual brand name, not potentially corrupted DB data
+                $brandNormalized = BrandNormalizer::normalize($brand->name);
 
                 foreach ($marketplaceBrands as $mpBrand) {
                     $mpBrandNormalized = BrandNormalizer::normalize($mpBrand['name']);
                     
-                    // 100% exact match
+                    // 100% exact match - must be identical character by character
                     if ($brandNormalized === $mpBrandNormalized) {
                         $matchedBrand = $mpBrand;
                         break;
@@ -383,9 +412,17 @@ class BrandMappingController extends Controller
     /**
      * Parse marketplace brands from API response
      */
-    private function parseMarketplaceBrands(array $response): array
+    private function parseMarketplaceBrands(array|string $response): array
     {
         $marketplaceBrands = [];
+
+        // Convert string to array if needed
+        if (is_string($response)) {
+            $response = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($response)) {
+                return [];
+            }
+        }
 
         // Handle different response structures
         if (isset($response['content']) && is_array($response['content'])) {
