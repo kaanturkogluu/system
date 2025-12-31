@@ -16,6 +16,7 @@ class Brand extends Model
         'normalized_name',
         'slug',
         'status',
+        'origin_country_id',
     ];
 
     protected $casts = [
@@ -30,6 +31,11 @@ class Brand extends Model
     public function marketplaceMappings()
     {
         return $this->hasMany(MarketplaceBrandMapping::class, 'brand_id');
+    }
+
+    public function originCountry()
+    {
+        return $this->belongsTo(Country::class, 'origin_country_id');
     }
 }
 

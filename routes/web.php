@@ -80,5 +80,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/brand-mappings/{brand}/marketplace/{marketplace}', [\App\Http\Controllers\Admin\BrandMappingController::class, 'store'])->name('brand-mappings.store');
         Route::delete('/brand-mappings/{brand}/marketplace/{marketplace}', [\App\Http\Controllers\Admin\BrandMappingController::class, 'destroy'])->name('brand-mappings.destroy');
         Route::post('/brand-mappings/auto-map', [\App\Http\Controllers\Admin\BrandMappingController::class, 'autoMap'])->name('brand-mappings.auto-map');
+        
+        // Brand Origins
+        Route::prefix('brand-origins')->name('brand-origins.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\BrandOriginController::class, 'index'])->name('index');
+            Route::put('/{brand}', [\App\Http\Controllers\Admin\BrandOriginController::class, 'update'])->name('update');
+            Route::post('/bulk-update', [\App\Http\Controllers\Admin\BrandOriginController::class, 'bulkUpdate'])->name('bulk-update');
+            Route::post('/marketplace-mapping', [\App\Http\Controllers\Admin\BrandOriginController::class, 'updateMarketplaceMapping'])->name('marketplace-mapping.update');
+            Route::delete('/marketplace-mapping', [\App\Http\Controllers\Admin\BrandOriginController::class, 'deleteMarketplaceMapping'])->name('marketplace-mapping.delete');
+        });
     });
 });

@@ -29,5 +29,10 @@ class Marketplace extends Model
     {
         return $this->hasMany(MarketplaceSetting::class, 'marketplace_id');
     }
+
+    public function countryMappings()
+    {
+        return $this->hasMany(MarketplaceCountryMapping::class, 'marketplace_id');
+    }
 }
 
