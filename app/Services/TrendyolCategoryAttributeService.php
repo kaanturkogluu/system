@@ -128,7 +128,28 @@ class TrendyolCategoryAttributeService
             ->first();
 
         if (!$marketplaceCategory) {
-            $stats['errors'][] = 'No mapped Trendyol category found for global category ID: ' . $globalCategoryId;
+            // Check if category exists
+            $category = Category::find($globalCategoryId);
+            $categoryName = $category ? $category->name : 'ID: ' . $globalCategoryId;
+            
+            // Check if there's an unmapped entry
+            $unmappedCategory = MarketplaceCategory::where('marketplace_id', $trendyolMarketplace->id)
+                ->where('global_category_id', $globalCategoryId)
+                ->where('is_mapped', false)
+                ->first();
+            
+            if ($unmappedCategory) {
+                $stats['errors'][] = "Kategori '{$categoryName}' Trendyol ile eşleştirilmiş ancak aktif değil. Lütfen marketplace-category-mappings sayfasından eşleştirmeyi aktifleştirin.";
+            } else {
+                $stats['errors'][] = "Kategori '{$categoryName}' Trendyol ile eşleştirilmemiş. Lütfen önce marketplace-category-mappings sayfasından bu kategoriyi bir Trendyol kategorisi ile eşleştirin.";
+            }
+            
+            Log::channel('imports')->warning('Category not mapped for attribute import', [
+                'category_id' => $globalCategoryId,
+                'category_name' => $categoryName,
+                'has_unmapped_entry' => $unmappedCategory !== null,
+            ]);
+            
             return $stats;
         }
 

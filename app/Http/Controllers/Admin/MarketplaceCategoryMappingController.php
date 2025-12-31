@@ -188,8 +188,24 @@ class MarketplaceCategoryMappingController extends Controller
             $service = app(\App\Services\TrendyolCategoryAttributeService::class);
             $stats = $service->importAttributesForCategory($validated['category_id']);
 
+            // Check for errors first
             if (!empty($stats['errors'])) {
+                \Log::channel('imports')->error('Import attributes failed', [
+                    'category_id' => $validated['category_id'],
+                    'errors' => $stats['errors'],
+                ]);
                 return back()->with('error', 'Hata: ' . implode(', ', $stats['errors']));
+            }
+
+            // Check if any attributes were processed
+            $totalProcessed = ($stats['attributes_created'] ?? 0) + ($stats['attributes_updated'] ?? 0);
+            
+            if ($totalProcessed === 0) {
+                \Log::channel('imports')->warning('No attributes imported', [
+                    'category_id' => $validated['category_id'],
+                    'stats' => $stats,
+                ]);
+                return back()->with('warning', 'Bu kategori için Trendyol\'dan özellik bulunamadı veya zaten mevcut.');
             }
 
             $message = sprintf(
@@ -199,9 +215,19 @@ class MarketplaceCategoryMappingController extends Controller
                 $stats['values_created'] ?? 0
             );
 
+            \Log::channel('imports')->info('Attributes imported successfully', [
+                'category_id' => $validated['category_id'],
+                'stats' => $stats,
+            ]);
+
             return back()->with('success', $message);
 
         } catch (\Exception $e) {
+            \Log::channel('imports')->error('Import attributes exception', [
+                'category_id' => $validated['category_id'] ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return back()->with('error', 'Hata: ' . $e->getMessage());
         }
     }
