@@ -35,6 +35,9 @@ class CategoryAttributeController extends Controller
         
         // Recursively load all nested children
         $this->loadChildrenRecursively($categories);
+        
+        // Get search query
+        $searchQuery = $request->get('search', '');
 
         $allAttributes = Attribute::where('status', 'active')
             ->orderBy('name')
@@ -44,7 +47,8 @@ class CategoryAttributeController extends Controller
             'categories',
             'category',
             'categoryAttributes',
-            'allAttributes'
+            'allAttributes',
+            'searchQuery'
         ));
     }
 

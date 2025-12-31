@@ -7,8 +7,22 @@
 <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
     <!-- Category Tree -->
     <div class="lg:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <h3 class="font-semibold mb-4">Kategoriler</h3>
-        <div class="space-y-1 max-h-96 overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold">Kategoriler</h3>
+        </div>
+        
+        <!-- Search Input -->
+        <div class="mb-4">
+            <input 
+                type="text" 
+                id="category-search" 
+                placeholder="Kategori ara..." 
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value="{{ $searchQuery ?? '' }}"
+            >
+        </div>
+        
+        <div class="space-y-1 max-h-96 overflow-y-auto" id="category-tree">
             @php
                 function renderCategoryTree($category, $level = 0) {
                     $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
@@ -36,6 +50,51 @@
             @endforeach
         </div>
     </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('category-search');
+            const categoryTree = document.getElementById('category-tree');
+            
+            if (!searchInput || !categoryTree) return;
+            
+            // Store original display states
+            const allCategoryLinks = Array.from(categoryTree.querySelectorAll('a'));
+            
+            searchInput.addEventListener('input', function(e) {
+                const searchTerm = e.target.value.toLowerCase().trim();
+                
+                if (searchTerm === '') {
+                    // Show all categories
+                    allCategoryLinks.forEach(link => {
+                        link.style.display = 'block';
+                    });
+                    return;
+                }
+                
+                // Filter categories
+                allCategoryLinks.forEach(link => {
+                    const categoryName = link.textContent.toLowerCase();
+                    const matches = categoryName.includes(searchTerm);
+                    
+                    if (matches) {
+                        link.style.display = 'block';
+                        // Show all parent categories
+                        let parent = link.parentElement;
+                        while (parent && parent !== categoryTree) {
+                            const parentLink = parent.querySelector('a');
+                            if (parentLink) {
+                                parentLink.style.display = 'block';
+                            }
+                            parent = parent.parentElement;
+                        }
+                    } else {
+                        link.style.display = 'none';
+                    }
+                });
+            });
+        });
+    </script>
 
     <!-- Attribute List -->
     <div class="lg:col-span-3">
