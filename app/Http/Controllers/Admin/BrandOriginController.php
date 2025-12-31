@@ -112,6 +112,7 @@ class BrandOriginController extends Controller
         $validated = $request->validate([
             'marketplace_id' => 'required|exists:marketplaces,id',
             'country_id' => 'required|exists:countries,id',
+            'external_country_id' => 'nullable|integer',
             'external_country_code' => 'nullable|string|max:50',
             'external_country_name' => 'nullable|string|max:255',
             'status' => 'required|in:active,passive',
@@ -123,6 +124,7 @@ class BrandOriginController extends Controller
                 'country_id' => $validated['country_id'],
             ],
             [
+                'external_country_id' => $validated['external_country_id'] ?? null,
                 'external_country_code' => $validated['external_country_code'] ?? null,
                 'external_country_name' => $validated['external_country_name'] ?? null,
                 'status' => $validated['status'],

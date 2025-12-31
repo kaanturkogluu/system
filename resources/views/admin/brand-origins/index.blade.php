@@ -191,6 +191,7 @@
                                                     }
                                                 }
                                                 $mappingData = $mapping ? [
+                                                    'external_country_id' => $mapping->external_country_id ?? '',
                                                     'external_country_code' => $mapping->external_country_code ?? '',
                                                     'external_country_name' => $mapping->external_country_name ?? '',
                                                     'status' => $mapping->status ?? 'active'
@@ -301,6 +302,17 @@
                 <div>
                     <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Menşei</label>
                     <p id="mp-modal-country-name" class="text-gray-900 dark:text-white font-medium"></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Pazaryeri Ülke ID</label>
+                    <input 
+                        type="number" 
+                        name="external_country_id" 
+                        id="mp-modal-external-id"
+                        placeholder="Örn: 10633877"
+                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Pazaryerindeki ülke ID'si (Trendyol attribute value ID)</p>
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Pazaryeri Ülke Kodu</label>
@@ -446,10 +458,12 @@ function openMarketplaceMappingModal(marketplaceId, marketplaceName, countryId, 
     document.getElementById('mp-modal-country-name').textContent = countryName;
     
     if (mapping) {
+        document.getElementById('mp-modal-external-id').value = mapping.external_country_id || '';
         document.getElementById('mp-modal-external-code').value = mapping.external_country_code || '';
         document.getElementById('mp-modal-external-name').value = mapping.external_country_name || '';
         document.getElementById('mp-modal-status').value = mapping.status || 'active';
     } else {
+        document.getElementById('mp-modal-external-id').value = '';
         document.getElementById('mp-modal-external-code').value = '';
         document.getElementById('mp-modal-external-name').value = '';
         document.getElementById('mp-modal-status').value = 'active';

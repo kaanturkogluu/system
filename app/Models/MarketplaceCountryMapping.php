@@ -12,6 +12,7 @@ class MarketplaceCountryMapping extends Model
     protected $fillable = [
         'marketplace_id',
         'country_id',
+        'external_country_id',
         'external_country_code',
         'external_country_name',
         'status',
@@ -20,6 +21,7 @@ class MarketplaceCountryMapping extends Model
     protected $casts = [
         'marketplace_id' => 'integer',
         'country_id' => 'integer',
+        'external_country_id' => 'integer',
     ];
 
     public function marketplace()
