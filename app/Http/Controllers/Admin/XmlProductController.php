@@ -39,7 +39,7 @@ class XmlProductController extends Controller
      */
     public function show($id)
     {
-        $product = Product::with(['brand.originCountry', 'category', 'variants', 'images'])
+        $product = Product::with(['brand.originCountry', 'category.parent', 'variants', 'images'])
             ->where('source_type', 'xml')
             ->findOrFail($id);
         

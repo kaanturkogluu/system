@@ -103,7 +103,50 @@
                 </div>
                 <div class="flex justify-between">
                     <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Kategori:</dt>
-                    <dd class="text-sm text-gray-900 dark:text-gray-100">{{ $product->category->name ?? '—' }}</dd>
+                    <dd class="text-sm text-gray-900 dark:text-gray-100">
+                        @if($product->category)
+                            <div class="space-y-1">
+                                <div class="font-semibold">{{ $product->category->name }}</div>
+                                @if($product->category->path)
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                                        <span class="font-medium">Yol:</span> {{ $product->category->path }}
+                                    </div>
+                                @endif
+                                <div class="flex items-center space-x-3 text-xs text-gray-500 dark:text-gray-400">
+                                    <span><span class="font-medium">ID:</span> {{ $product->category->id }}</span>
+                                    @if($product->category->level)
+                                        <span><span class="font-medium">Seviye:</span> {{ $product->category->level }}</span>
+                                    @endif
+                                    @if($product->category->parent)
+                                        <span><span class="font-medium">Üst Kategori:</span> {{ $product->category->parent->name }}</span>
+                                    @endif
+                                </div>
+                                @if($product->category->slug)
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                                        <span class="font-medium">Slug:</span> <span class="font-mono">{{ $product->category->slug }}</span>
+                                    </div>
+                                @endif
+                                <div class="flex items-center space-x-2">
+                                    @if($product->category->is_active)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300">
+                                            Aktif
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-300">
+                                            Pasif
+                                        </span>
+                                    @endif
+                                    @if($product->category->is_leaf)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300">
+                                            Yaprak Kategori
+                                        </span>
+                                    @endif
+                                </div>
+                            </div>
+                        @else
+                            <span class="text-gray-400">—</span>
+                        @endif
+                    </dd>
                 </div>
                 <div class="flex justify-between">
                     <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Menşei:</dt>

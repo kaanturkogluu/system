@@ -201,7 +201,7 @@
                                             </td>
                                             <td class="px-4 py-2 text-sm">
                                                 <button 
-                                                    onclick="openMappingModal('{{ $item['xml_attribute_key'] }}', {{ $item['matched_attribute_id'] ?? 'null' }})"
+                                                    onclick="openMappingModalWithCategory('{{ $item['xml_attribute_key'] }}', {{ $item['matched_attribute_id'] ?? 'null' }}, {{ $categoryGroup['category_id'] ?? 'null' }})"
                                                     class="text-blue-600 dark:text-blue-400 hover:underline"
                                                 >
                                                     Eşleştir
@@ -240,7 +240,7 @@
                                             </td>
                                             <td class="px-4 py-2 text-sm">
                                                 <button 
-                                                    onclick="openMappingModal('{{ $item['xml_attribute_key'] }}', null)"
+                                                    onclick="openMappingModalWithCategory('{{ $item['xml_attribute_key'] }}', null, {{ $categoryGroup['category_id'] ?? 'null' }})"
                                                     class="text-blue-600 dark:text-blue-400 hover:underline"
                                                 >
                                                     Manuel Eşleştir
@@ -331,7 +331,7 @@
                                     </td>
                                     <td class="px-4 py-3 text-sm">
                                         <button 
-                                            onclick="openMappingModal('{{ $item['xml_attribute_key'] }}', {{ $item['matched_attribute_id'] ?? 'null' }})"
+                                            onclick="openMappingModalWithCategory('{{ $item['xml_attribute_key'] }}', {{ $item['matched_attribute_id'] ?? 'null' }}, {{ !empty($item['categories']) ? $item['categories'][0] : 'null' }})"
                                             class="text-blue-600 dark:text-blue-400 hover:underline"
                                         >
                                             Eşleştir
@@ -374,7 +374,7 @@
                                     </td>
                                     <td class="px-4 py-3 text-sm">
                                         <button 
-                                            onclick="openMappingModal('{{ $item['xml_attribute_key'] }}', null)"
+                                            onclick="openMappingModalWithCategory('{{ $item['xml_attribute_key'] }}', null, {{ !empty($item['categories']) ? $item['categories'][0] : 'null' }})"
                                             class="text-blue-600 dark:text-blue-400 hover:underline"
                                         >
                                             Manuel Eşleştir
@@ -460,10 +460,13 @@
                         class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                         <option value="">Seçin...</option>
-                        @foreach($attributes as $attribute)
-                            <option value="{{ $attribute->id }}">{{ $attribute->name }} ({{ $attribute->code }})</option>
+                        @foreach($allAttributes as $attribute)
+                            <option value="{{ $attribute->id }}" data-categories="{{ $attribute->categories()->pluck('categories.id')->implode(',') }}">
+                                {{ $attribute->name }} ({{ $attribute->code }})
+                            </option>
                         @endforeach
                     </select>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1" id="modal-category-info"></p>
                 </div>
                 <div class="flex gap-3">
                     <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
@@ -479,11 +482,66 @@
 </div>
 
 <script>
+// Store attributes by category data
+const attributesByCategory = @json($attributesByCategory ?? []);
+
 function openMappingModal(xmlKey, attributeId) {
-    document.getElementById('modal-xml-key').value = xmlKey;
-    document.getElementById('modal-xml-key-display').textContent = xmlKey;
-    document.getElementById('modal-attribute-id').value = attributeId || '';
-    document.getElementById('mapping-modal').classList.remove('hidden');
+    openMappingModalWithCategory(xmlKey, attributeId, null);
+}
+
+function openMappingModalWithCategory(xmlKey, attributeId, categoryId) {
+    const modalXmlKey = document.getElementById('modal-xml-key');
+    const modalXmlKeyDisplay = document.getElementById('modal-xml-key-display');
+    const modalAttributeId = document.getElementById('modal-attribute-id');
+    const mappingModal = document.getElementById('mapping-modal');
+    
+    // Null checks
+    if (!modalXmlKey || !modalXmlKeyDisplay || !modalAttributeId || !mappingModal) {
+        console.error('Modal elements not found');
+        return;
+    }
+    
+    modalXmlKey.value = xmlKey;
+    modalXmlKeyDisplay.textContent = xmlKey;
+    modalAttributeId.value = attributeId || '';
+    
+    // Filter attributes by category
+    const select = modalAttributeId;
+    const options = select.querySelectorAll('option');
+    const categoryInfo = document.getElementById('modal-category-info');
+    
+    if (categoryId && attributesByCategory[categoryId]) {
+        // Show only attributes for this category
+        const categoryAttributeIds = attributesByCategory[categoryId].map(a => a.id.toString());
+        
+        options.forEach(option => {
+            if (option.value === '') {
+                option.style.display = 'block'; // Keep "Seçin..." option
+            } else {
+                if (categoryAttributeIds.includes(option.value)) {
+                    option.style.display = 'block';
+                } else {
+                    option.style.display = 'none';
+                }
+            }
+        });
+        
+        if (categoryInfo) {
+            categoryInfo.textContent = `Sadece bu kategoriye ait ${categoryAttributeIds.length} özellik gösteriliyor.`;
+            categoryInfo.classList.remove('hidden');
+        }
+    } else {
+        // Show all attributes if no category specified
+        options.forEach(option => {
+            option.style.display = 'block';
+        });
+        if (categoryInfo) {
+            categoryInfo.textContent = '';
+            categoryInfo.classList.add('hidden');
+        }
+    }
+    
+    mappingModal.classList.remove('hidden');
 }
 
 function closeMappingModal() {

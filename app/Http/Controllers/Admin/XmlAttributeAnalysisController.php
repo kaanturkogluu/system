@@ -58,10 +58,26 @@ class XmlAttributeAnalysisController extends Controller
             ->orderBy('source_attribute_key')
             ->get();
 
-        // Get all attributes for manual mapping
-        $attributes = Attribute::where('status', 'active')
+        // Get all attributes for manual mapping (will be filtered by category in modal)
+        $allAttributes = Attribute::where('status', 'active')
             ->orderBy('name')
             ->get();
+        
+        // Group attributes by category for modal filtering
+        $attributesByCategory = [];
+        foreach ($allAttributes as $attribute) {
+            $categoryIds = $attribute->categories()->pluck('categories.id')->toArray();
+            foreach ($categoryIds as $categoryId) {
+                if (!isset($attributesByCategory[$categoryId])) {
+                    $attributesByCategory[$categoryId] = [];
+                }
+                $attributesByCategory[$categoryId][] = [
+                    'id' => $attribute->id,
+                    'name' => $attribute->name,
+                    'code' => $attribute->code,
+                ];
+            }
+        }
 
         // Get mapped categories for filter dropdown
         $mappedCategories = \App\Models\CategoryMapping::where('status', 'mapped')
@@ -86,7 +102,8 @@ class XmlAttributeAnalysisController extends Controller
             'summary',
             'groupedByCategory',
             'existingMappings',
-            'attributes',
+            'allAttributes',
+            'attributesByCategory',
             'limit',
             'categorySearch',
             'mappedCategories'
