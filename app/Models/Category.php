@@ -79,5 +79,16 @@ class Category extends Model
     {
         return $this->hasMany(CategoryAttribute::class, 'category_id');
     }
+
+    /**
+     * Get Trendyol marketplace category mapping
+     */
+    public function trendyolCategory()
+    {
+        return $this->hasOne(MarketplaceCategory::class, 'global_category_id', 'id')
+            ->whereHas('marketplace', function ($query) {
+                $query->where('slug', 'trendyol');
+            });
+    }
 }
 

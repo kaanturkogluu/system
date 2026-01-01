@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\MarketplaceBrandSearchResult;
+use App\Models\Brand;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -1034,7 +1035,17 @@ class MarketplaceBrandSearchResultsSeeder extends Seeder
             ],
         ];
 
+        $seeded = 0;
+        $skipped = 0;
+        
         foreach ($data as $item) {
+            // Brand'in var olup olmadığını kontrol et
+            $brand = Brand::find($item['brand_id']);
+            if (!$brand) {
+                $skipped++;
+                continue;
+            }
+            
             MarketplaceBrandSearchResult::updateOrCreate(
                 [
                     'marketplace_id' => $item['marketplace_id'],
@@ -1042,8 +1053,12 @@ class MarketplaceBrandSearchResultsSeeder extends Seeder
                 ],
                 $item
             );
+            $seeded++;
         }
 
-        $this->command->info('✅ ' . count($data) . ' marketplace brand search result(s) seeded.');
+        $this->command->info('✅ ' . $seeded . ' marketplace brand search result(s) seeded.');
+        if ($skipped > 0) {
+            $this->command->warn('⚠️  ' . $skipped . ' brand search result(s) skipped (brand not found).');
+        }
     }
 }

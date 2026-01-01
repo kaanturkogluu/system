@@ -68,22 +68,24 @@ return new class extends Migration
                 $table->index('marketplace_id', 'idx_marketplace_country_mappings_marketplace_id');
             });
         } else {
-            // If marketplace_code doesn't exist, just add marketplace_id
-            Schema::table('marketplace_country_mappings', function (Blueprint $table) {
-                $table->unsignedInteger('marketplace_id')->after('id');
+            // If marketplace_code doesn't exist, check if marketplace_id already exists
+            if (!Schema::hasColumn('marketplace_country_mappings', 'marketplace_id')) {
+                Schema::table('marketplace_country_mappings', function (Blueprint $table) {
+                    $table->unsignedInteger('marketplace_id')->after('id');
 
-                // Unique constraint
-                $table->unique(['marketplace_id', 'country_id'], 'uq_marketplace_country_mapping');
+                    // Unique constraint
+                    $table->unique(['marketplace_id', 'country_id'], 'uq_marketplace_country_mapping');
 
-                // Foreign key
-                $table->foreign('marketplace_id', 'fk_marketplace_country_mappings_marketplace_id')
-                    ->references('id')
-                    ->on('marketplaces')
-                    ->onDelete('cascade');
+                    // Foreign key
+                    $table->foreign('marketplace_id', 'fk_marketplace_country_mappings_marketplace_id')
+                        ->references('id')
+                        ->on('marketplaces')
+                        ->onDelete('cascade');
 
-                // Index
-                $table->index('marketplace_id', 'idx_marketplace_country_mappings_marketplace_id');
-            });
+                    // Index
+                    $table->index('marketplace_id', 'idx_marketplace_country_mappings_marketplace_id');
+                });
+            }
         }
     }
 

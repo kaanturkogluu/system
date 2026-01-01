@@ -209,6 +209,7 @@ class TrendyolCategoryAttributeService
                         'data_type' => $dataType,
                         'is_filterable' => $categoryAttribute['slicer'] ?? false,
                         'status' => 'active',
+                        'external_id' => $trendyolAttributeId, // Trendyol attribute ID
                     ]);
                     $stats['attributes_updated']++;
                 } else {
@@ -219,6 +220,7 @@ class TrendyolCategoryAttributeService
                         'data_type' => $dataType,
                         'is_filterable' => $categoryAttribute['slicer'] ?? false,
                         'status' => 'active',
+                        'external_id' => $trendyolAttributeId, // Trendyol attribute ID
                     ]);
                     $stats['attributes_created']++;
                 }
@@ -302,11 +304,14 @@ class TrendyolCategoryAttributeService
                 ->where('normalized_value', $normalizedValue)
                 ->first();
 
+            $trendyolValueId = $valueData['id'] ?? null;
+            
             if ($existingValue) {
                 // Update if needed
                 $existingValue->update([
                     'value' => $displayValue,
                     'status' => 'active',
+                    'external_id' => $trendyolValueId, // Trendyol attribute value ID
                 ]);
             } else {
                 // Create new
@@ -315,6 +320,7 @@ class TrendyolCategoryAttributeService
                     'value' => $displayValue,
                     'normalized_value' => $normalizedValue,
                     'status' => 'active',
+                    'external_id' => $trendyolValueId, // Trendyol attribute value ID
                 ]);
                 $stats['values_created']++;
             }

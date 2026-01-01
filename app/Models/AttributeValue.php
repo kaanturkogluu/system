@@ -16,6 +16,7 @@ class AttributeValue extends Model
         'value',
         'normalized_value',
         'status',
+        'external_id',
     ];
 
     public function attribute()

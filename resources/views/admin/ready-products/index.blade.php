@@ -11,9 +11,26 @@
             <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Gönderilmeye Hazır Ürünler</h2>
             <p class="text-gray-600 dark:text-gray-400 mt-1">API formatına uygun hazırlanmış ürünler</p>
         </div>
-        <div class="text-sm text-gray-600 dark:text-gray-400">
-            Toplam: <span class="font-semibold">{{ $products->total() }}</span> ürün
+        <div class="flex items-center space-x-4">
+            <div class="text-sm text-gray-600 dark:text-gray-400">
+                Toplam: <span class="font-semibold">{{ $products->total() }}</span> ürün
+            </div>
+            <button 
+                type="button"
+                id="check-status-btn"
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition duration-200 flex items-center space-x-2"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>IMPORTED Ürünleri Kontrol Et</span>
+            </button>
         </div>
+    </div>
+
+    <!-- Status Check Result -->
+    <div id="status-check-result" class="hidden bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div id="status-check-content"></div>
     </div>
 
     <!-- Filters -->
@@ -93,6 +110,9 @@
                                 @if($product->category)
                                     <span>Kategori: {{ $product->category->name }}</span>
                                 @endif
+                                @if($product->category && $product->category->trendyolCategory)
+                                    <span>Trendyol Kategori ID: <span class="font-mono text-green-600 dark:text-green-400">{{ $product->category->trendyolCategory->marketplace_category_id }}</span></span>
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -145,6 +165,26 @@
                         <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Kategori ID</div>
                         <div class="text-sm font-medium text-gray-900 dark:text-white">
                             {{ is_string($apiData['categoryId']) && $apiData['categoryId'] === 'Sistemde Veri yok' ? '❌ Yok' : '✅ ' . $apiData['categoryId'] }}
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-900 rounded p-3">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Trendyol Kategori ID</div>
+                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                            @if($product->category && $product->category->trendyolCategory)
+                                <span class="text-green-600 dark:text-green-400">✅ {{ $product->category->trendyolCategory->marketplace_category_id }}</span>
+                            @else
+                                <span class="text-red-600 dark:text-red-400">❌ Yok</span>
+                            @endif
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-900 rounded p-3">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Trendyol Kategori ID</div>
+                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                            @if($product->category && $product->category->trendyolCategory)
+                                <span class="text-green-600 dark:text-green-400">✅ {{ $product->category->trendyolCategory->marketplace_category_id }}</span>
+                            @else
+                                <span class="text-red-600 dark:text-red-400">❌ Yok</span>
+                            @endif
                         </div>
                     </div>
                     <div class="bg-gray-50 dark:bg-gray-900 rounded p-3">
@@ -263,5 +303,151 @@
     </div>
     @endif
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Ready products page loaded');
+    const checkStatusBtn = document.getElementById('check-status-btn');
+    const statusCheckResult = document.getElementById('status-check-result');
+    const statusCheckContent = document.getElementById('status-check-content');
+
+    console.log('Button element:', checkStatusBtn);
+
+    if (checkStatusBtn) {
+        checkStatusBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Button clicked');
+            
+            const btnText = checkStatusBtn.querySelector('span');
+            const originalText = btnText ? btnText.textContent : 'IMPORTED Ürünleri Kontrol Et';
+            
+            // Disable button
+            checkStatusBtn.disabled = true;
+            if (btnText) {
+                btnText.textContent = 'Kontrol ediliyor...';
+            }
+            
+            // Get category_id from filter
+            const categoryId = new URLSearchParams(window.location.search).get('category_id') || '';
+            
+            console.log('Making request to:', '{{ route("admin.ready-products.check-status") }}');
+            
+            // Get CSRF token from meta tag
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+            
+            // Make request
+            fetch('{{ route("admin.ready-products.check-status") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    category_id: categoryId
+                })
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                if (!response.ok) {
+                    throw new Error('HTTP error! status: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                // Show result
+                if (statusCheckResult) {
+                    statusCheckResult.classList.remove('hidden');
+                }
+                
+                let html = `
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Kontrol Sonucu</h3>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">${data.message}</p>
+                    </div>
+                `;
+                
+                if (data.details && data.details.length > 0) {
+                    html += `
+                        <div class="max-h-96 overflow-y-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                <thead class="bg-gray-50 dark:bg-gray-900">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">SKU</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Başlık</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Kategori</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Durum</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Eksik Özellikler</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    `;
+                    
+                    data.details.forEach(item => {
+                        const statusClass = item.status.includes('READY') 
+                            ? 'text-green-600 dark:text-green-400' 
+                            : 'text-yellow-600 dark:text-yellow-400';
+                        
+                        html += `
+                            <tr>
+                                <td class="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">${item.sku}</td>
+                                <td class="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">${item.title}</td>
+                                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">${item.category}</td>
+                                <td class="px-4 py-3 text-sm ${statusClass}">${item.status}</td>
+                                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                    ${item.missing && item.missing.length > 0 
+                                        ? '<ul class="list-disc list-inside text-red-600 dark:text-red-400">' + 
+                                          item.missing.map(m => '<li>' + m + '</li>').join('') + 
+                                          '</ul>' 
+                                        : '-'}
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+                
+                if (statusCheckContent) {
+                    statusCheckContent.innerHTML = html;
+                }
+                
+                // Reload page after 2 seconds if products were updated
+                if (data.updated > 0) {
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                if (statusCheckResult) {
+                    statusCheckResult.classList.remove('hidden');
+                }
+                if (statusCheckContent) {
+                    statusCheckContent.innerHTML = `
+                        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                            <p class="text-red-800 dark:text-red-400">Hata: ${error.message}</p>
+                            <p class="text-red-600 dark:text-red-500 text-sm mt-2">Konsolu kontrol edin (F12)</p>
+                        </div>
+                    `;
+                }
+            })
+            .finally(() => {
+                // Re-enable button
+                checkStatusBtn.disabled = false;
+                if (btnText) {
+                    btnText.textContent = originalText;
+                }
+            });
+        });
+    }
+});
+</script>
 @endsection
 

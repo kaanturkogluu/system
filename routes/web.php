@@ -76,6 +76,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         
         // Ready Products (Gönderilmeye Hazır Ürünler)
         Route::get('/ready-products', [\App\Http\Controllers\Admin\ReadyProductController::class, 'index'])->name('ready-products.index');
+        Route::post('/ready-products/check-status', [\App\Http\Controllers\Admin\ReadyProductController::class, 'checkAndUpdateStatus'])->name('ready-products.check-status');
         
         // XML Attribute Analysis
         Route::prefix('xml-attribute-analysis')->name('xml-attribute-analysis.')->group(function () {

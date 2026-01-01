@@ -10,6 +10,7 @@ use App\Models\ImportItem;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductVariant;
+use App\Services\ProductAttributePersistenceService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -241,10 +242,39 @@ class ImportItemJob implements ShouldQueue
                 // 7) Product images (resim URL'leri kaydet)
                 $this->saveProductImages($product->id, $payload);
 
-                // 8) import_item status güncelle - Başarılı
-                $importItem->update([
-                    'status' => 'UPSERTED',
-                ]);
+                // 8) Process product attributes (maplanen özelliklere göre)
+                $attributeService = new ProductAttributePersistenceService();
+                $attributeStats = $attributeService->processProduct($product, $payload);
+                
+                // Eğer mapping eksikse status'ü NEEDS_MAPPING yap
+                if (!empty($attributeStats['missing_mappings'])) {
+                    $importItem->update([
+                        'status' => 'NEEDS_MAPPING',
+                        'error_message' => 'XML attribute mapping eksik: ' . implode(', ', $attributeStats['missing_mappings']),
+                    ]);
+                } else {
+                    // 9) Required attribute kontrolü yap ve product status'ünü güncelle
+                    // Product'ı yeniden yükle (product_attributes ilişkisi için)
+                    $product->load('productAttributes.attribute', 'productAttributes.attributeValue', 'brand.originCountry');
+                    
+                    // Tüm required attribute'lar mevcut mu kontrol et
+                    if ($attributeService->hasAllRequiredAttributes($product)) {
+                        // Tüm required attribute'lar mevcut - READY status'üne geç
+                        $product->update([
+                            'status' => 'READY',
+                        ]);
+                    } else {
+                        // Required attribute'lar eksik - IMPORTED olarak kal
+                        $product->update([
+                            'status' => 'IMPORTED',
+                        ]);
+                    }
+                    
+                    // import_item status güncelle - Başarılı
+                    $importItem->update([
+                        'status' => 'UPSERTED',
+                    ]);
+                }
 
                 Log::channel('imports')->info('Import item processed successfully', [
                     'import_item_id' => $this->importItemId,

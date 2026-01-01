@@ -17,6 +17,7 @@ class Attribute extends Model
         'data_type',
         'is_filterable',
         'status',
+        'external_id',
     ];
 
     protected $casts = [

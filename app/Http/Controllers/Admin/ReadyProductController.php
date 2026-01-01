@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\CategoryAttribute;
 use App\Models\AttributeValue;
 use App\Models\XmlAttributeMapping;
+use App\Services\ProductAttributePersistenceService;
 use Illuminate\Http\Request;
 
 class ReadyProductController extends Controller
@@ -17,7 +18,14 @@ class ReadyProductController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Product::with(['brand.originCountry', 'category', 'variants', 'images'])
+        $query = Product::with([
+                'brand.originCountry', 
+                'category.trendyolCategory', 
+                'variants', 
+                'images', 
+                'productAttributes.attribute', 
+                'productAttributes.attributeValue'
+            ])
             ->where('status', 'READY');
 
         // Filtreleme
@@ -43,6 +51,122 @@ class ReadyProductController extends Controller
         $categories = Category::where('is_active', true)->orderBy('name')->get();
 
         return view('admin.ready-products.index', compact('products', 'productsWithApiData', 'categories'));
+    }
+
+    /**
+     * Mevcut IMPORTED ürünleri kontrol et ve READY'ye çevir
+     */
+    public function checkAndUpdateStatus(Request $request)
+    {
+        $categoryId = $request->input('category_id');
+        
+        $query = Product::with(['productAttributes.attribute', 'productAttributes.attributeValue', 'brand.originCountry', 'category'])
+            ->where('status', 'IMPORTED');
+
+        if ($categoryId) {
+            $query->where('category_id', $categoryId);
+        }
+
+        $products = $query->get();
+        $service = new ProductAttributePersistenceService();
+        
+        $updated = 0;
+        $skipped = 0;
+        $details = [];
+
+        foreach ($products as $product) {
+            if ($service->hasAllRequiredAttributes($product)) {
+                $product->update(['status' => 'READY']);
+                $updated++;
+                $details[] = [
+                    'sku' => $product->sku,
+                    'title' => $product->title,
+                    'status' => 'READY',
+                    'category' => $product->category ? $product->category->name : 'N/A',
+                ];
+            } else {
+                $skipped++;
+                // Eksik attribute'ları bul
+                $missing = $this->getMissingRequiredAttributes($product);
+                $details[] = [
+                    'sku' => $product->sku,
+                    'title' => $product->title,
+                    'status' => 'IMPORTED (eksik özellikler)',
+                    'category' => $product->category ? $product->category->name : 'N/A',
+                    'missing' => $missing,
+                ];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Kontrol tamamlandı. {$updated} ürün READY'ye çevrildi, {$skipped} ürün eksik özellik nedeniyle IMPORTED olarak kaldı.",
+            'updated' => $updated,
+            'skipped' => $skipped,
+            'details' => $details,
+        ]);
+    }
+
+    /**
+     * Eksik required attribute'ları bul
+     */
+    private function getMissingRequiredAttributes(Product $product): array
+    {
+        $missing = [];
+
+        if (!$product->category_id) {
+            return ['Kategori tanımlı değil'];
+        }
+
+        $requiredAttributes = CategoryAttribute::where('category_id', $product->category_id)
+            ->where('is_required', true)
+            ->with('attribute')
+            ->get();
+
+        $productAttributesMap = [];
+        if ($product->productAttributes) {
+            foreach ($product->productAttributes as $productAttribute) {
+                $productAttributesMap[$productAttribute->attribute_id] = $productAttribute;
+            }
+        }
+
+        foreach ($requiredAttributes as $categoryAttribute) {
+            $attribute = $categoryAttribute->attribute;
+            if (!$attribute) {
+                continue;
+            }
+
+            $isMenşei = false;
+            if (strtolower(trim($attribute->name)) === 'menşei' || 
+                strtolower(trim($attribute->code)) === 'menşei' ||
+                strtolower(trim($attribute->code)) === 'mensei') {
+                $isMenşei = true;
+            }
+
+            if ($isMenşei && $product->brand && $product->brand->originCountry) {
+                continue;
+            }
+
+            if (!isset($productAttributesMap[$attribute->id])) {
+                $missing[] = $attribute->name . ' (product_attributes tablosunda yok)';
+            } else {
+                $productAttribute = $productAttributesMap[$attribute->id];
+                $hasValue = false;
+                if ($productAttribute->attribute_value_id !== null) {
+                    $hasValue = true;
+                } elseif ($productAttribute->value_string !== null && trim($productAttribute->value_string) !== '') {
+                    $hasValue = true;
+                } elseif ($productAttribute->value_number !== null) {
+                    $hasValue = true;
+                }
+
+                if (!$hasValue) {
+                    $missing[] = $attribute->name . ' (değer boş)';
+                }
+            }
+        }
+
+        return $missing;
     }
 
     /**
@@ -120,6 +244,7 @@ class ReadyProductController extends Controller
 
     /**
      * Attribute'ları hazırla - Required attribute'lar dahil
+     * product_attributes tablosundan verileri çeker (SINGLE source of truth)
      */
     private function prepareAttributes(Product $product): array
     {
@@ -129,11 +254,22 @@ class ReadyProductController extends Controller
         if ($product->category_id) {
             $requiredAttributes = CategoryAttribute::where('category_id', $product->category_id)
                 ->where('is_required', true)
-                ->with('attribute')
+                ->with('attribute') // Attribute'ları eager load et (external_id için)
                 ->get();
 
-            // Product'ın raw_xml'inden attribute değerlerini çıkar
-            $productAttributes = $this->extractProductAttributes($product);
+            // Product'ın product_attributes tablosundan verileri al (SINGLE source of truth)
+            $productAttributesMap = [];
+            if ($product->productAttributes) {
+                foreach ($product->productAttributes as $productAttribute) {
+                    $productAttributesMap[$productAttribute->attribute_id] = $productAttribute;
+                }
+            }
+
+            // Fallback: Eğer product_attributes'da yoksa raw_xml'den çıkar (backward compatibility)
+            $rawXmlAttributes = [];
+            if (empty($productAttributesMap)) {
+                $rawXmlAttributes = $this->extractProductAttributes($product);
+            }
 
             foreach ($requiredAttributes as $categoryAttribute) {
                 $attribute = $categoryAttribute->attribute;
@@ -163,42 +299,76 @@ class ReadyProductController extends Controller
                     
                     if ($attributeValue) {
                         $attributes[] = [
-                            'attributeId' => $attribute->id,
-                            'attributeValueId' => $attributeValue->id,
+                            'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                            'attributeValueId' => $attributeValue->external_id ?? $attributeValue->id, // Trendyol attribute value ID
                         ];
                     } else {
                         // Custom değer olarak ekle
                         $attributes[] = [
-                            'attributeId' => $attribute->id,
+                            'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
                             'customAttributeValue' => $originCountryName,
                         ];
                     }
                     continue;
                 }
 
-                // XML'den bu attribute'a karşılık gelen değeri bul
-                $attributeValue = $this->findAttributeValue($product, $attribute->id, $productAttributes);
-
-                if ($attributeValue) {
-                    // AttributeValue ID varsa onu kullan
-                    if (isset($attributeValue['attribute_value_id'])) {
+                // product_attributes tablosundan değeri bul (SINGLE source of truth)
+                if (isset($productAttributesMap[$attribute->id])) {
+                    $productAttribute = $productAttributesMap[$attribute->id];
+                    
+                    // Data type'a göre değeri al
+                    if ($productAttribute->attribute_value_id) {
+                        // Enum değer - AttributeValue'yu yükle
+                        $attributeValue = AttributeValue::find($productAttribute->attribute_value_id);
                         $attributes[] = [
-                            'attributeId' => $attribute->id,
-                            'attributeValueId' => $attributeValue['attribute_value_id'],
+                            'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                            'attributeValueId' => $attributeValue ? ($attributeValue->external_id ?? $attributeValue->id) : $productAttribute->attribute_value_id, // Trendyol attribute value ID
+                        ];
+                    } elseif ($productAttribute->value_string !== null) {
+                        // String değer
+                        $attributes[] = [
+                            'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                            'customAttributeValue' => $productAttribute->value_string,
+                        ];
+                    } elseif ($productAttribute->value_number !== null) {
+                        // Number değer (string olarak gönder)
+                        $attributes[] = [
+                            'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                            'customAttributeValue' => (string) $productAttribute->value_number,
                         ];
                     } else {
-                        // Custom değer kullan
+                        // Değer yok
                         $attributes[] = [
-                            'attributeId' => $attribute->id,
-                            'customAttributeValue' => $attributeValue['value'] ?? 'Sistemde Veri yok',
+                            'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                            'customAttributeValue' => 'Sistemde Veri yok',
                         ];
                     }
                 } else {
-                    // Değer bulunamadı - Sistemde Veri yok olarak ekle
-                    $attributes[] = [
-                        'attributeId' => $attribute->id,
-                        'customAttributeValue' => 'Sistemde Veri yok',
-                    ];
+                    // product_attributes'da yok, fallback olarak raw_xml'den çıkar
+                    $attributeValue = $this->findAttributeValue($product, $attribute->id, $rawXmlAttributes);
+
+                    if ($attributeValue) {
+                        // AttributeValue ID varsa onu kullan
+                        if (isset($attributeValue['attribute_value_id'])) {
+                            $attrValue = AttributeValue::find($attributeValue['attribute_value_id']);
+                            $attributes[] = [
+                                'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                                'attributeValueId' => $attrValue ? ($attrValue->external_id ?? $attrValue->id) : $attributeValue['attribute_value_id'], // Trendyol attribute value ID
+                            ];
+                        } else {
+                            // Custom değer kullan
+                            $attributes[] = [
+                                'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                                'customAttributeValue' => $attributeValue['value'] ?? 'Sistemde Veri yok',
+                            ];
+                        }
+                    } else {
+                        // Değer bulunamadı - Sistemde Veri yok olarak ekle
+                        $attributes[] = [
+                            'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                            'customAttributeValue' => 'Sistemde Veri yok',
+                        ];
+                    }
                 }
             }
         }

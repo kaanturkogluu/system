@@ -30,6 +30,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             MarketplaceSeeder::class,
             FeedSourceSeeder::class,
+            CountrySeeder::class,
+            MarketplaceCountryMappingSeeder::class,
         ]);
     }
 }
