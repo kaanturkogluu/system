@@ -134,6 +134,12 @@
                         </svg>
                         <span class="font-medium">XML Ürünleri</span>
                     </a>
+                    <a href="{{ route('admin.xml-attribute-analysis.index') }}" class="flex items-center px-4 py-3 ml-4 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition duration-200 {{ request()->routeIs('admin.xml-attribute-analysis.*') ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : '' }}">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                        </svg>
+                        <span class="font-medium">XML Attribute Analysis</span>
+                    </a>
                 </nav>
 
                 <!-- User Section -->

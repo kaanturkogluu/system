@@ -74,6 +74,13 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/xml-products', [\App\Http\Controllers\Admin\XmlProductController::class, 'index'])->name('xml-products.index');
         Route::get('/xml-products/{id}', [\App\Http\Controllers\Admin\XmlProductController::class, 'show'])->name('xml-products.show');
         
+        // XML Attribute Analysis
+        Route::prefix('xml-attribute-analysis')->name('xml-attribute-analysis.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\XmlAttributeAnalysisController::class, 'index'])->name('index');
+            Route::post('/mapping', [\App\Http\Controllers\Admin\XmlAttributeAnalysisController::class, 'storeMapping'])->name('mapping.store');
+            Route::delete('/mapping/{mapping}', [\App\Http\Controllers\Admin\XmlAttributeAnalysisController::class, 'deleteMapping'])->name('mapping.delete');
+        });
+        
         // Brand Mappings
         Route::get('/brand-mappings', [\App\Http\Controllers\Admin\BrandMappingController::class, 'index'])->name('brand-mappings.index');
         Route::get('/brand-mappings/{brand}/marketplace/{marketplace}/search-results', [\App\Http\Controllers\Admin\BrandMappingController::class, 'showSearchResults'])->name('brand-mappings.search-results');
