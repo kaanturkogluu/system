@@ -39,7 +39,7 @@ class XmlAttributeAnalysisController extends Controller
                 $groupedByCategory = $this->groupByCategory($analysis);
                 
                 // Summary
-                $matched = array_filter($analysis, fn($a) => $a['confidence'] === 'HIGH' && $a['matched_attribute_id']);
+                $matched = array_filter($analysis, fn($a) => ($a['confidence'] === 'HIGH' || $a['confidence'] === 'MAPPED') && $a['matched_attribute_id']);
                 $needsReview = array_filter($analysis, fn($a) => $a['confidence'] === 'MEDIUM' || ($a['confidence'] === 'LOW' && $a['matched_attribute_id']));
                 $unmapped = array_filter($analysis, fn($a) => $a['confidence'] === 'LOW' && !$a['matched_attribute_id']);
                 
@@ -79,7 +79,7 @@ class XmlAttributeAnalysisController extends Controller
             }
         }
 
-        // Get mapped categories for filter dropdown
+        // Get mapped categories for filter dropdown (unique by category_id)
         $mappedCategories = \App\Models\CategoryMapping::where('status', 'mapped')
             ->with('category')
             ->get()
@@ -93,8 +93,36 @@ class XmlAttributeAnalysisController extends Controller
             ->filter(function ($item) {
                 return $item['name'] !== 'Unknown';
             })
+            ->unique('id') // Remove duplicates by category_id
             ->sortBy('name')
             ->values();
+
+        // Get required attributes for each category (for Trendyol)
+        $requiredAttributesByCategory = [];
+        if ($groupedByCategory) {
+            foreach ($groupedByCategory as $categoryId => $categoryGroup) {
+                if (isset($categoryGroup['category_id']) && $categoryGroup['category_id'] && $categoryId !== '_uncategorized') {
+                    $categoryIdValue = $categoryGroup['category_id'];
+                    $requiredAttributes = \App\Models\CategoryAttribute::where('category_id', $categoryIdValue)
+                        ->where('is_required', true)
+                        ->with('attribute')
+                        ->get()
+                        ->map(function ($ca) {
+                            return [
+                                'id' => $ca->attribute->id ?? null,
+                                'name' => $ca->attribute->name ?? '—',
+                                'code' => $ca->attribute->code ?? '—',
+                            ];
+                        })
+                        ->filter(function ($attr) {
+                            return $attr['id'] !== null;
+                        })
+                        ->values();
+                    
+                    $requiredAttributesByCategory[$categoryIdValue] = $requiredAttributes;
+                }
+            }
+        }
 
         return view('admin.xml-attribute-analysis.index', compact(
             'analysis',
@@ -106,7 +134,8 @@ class XmlAttributeAnalysisController extends Controller
             'attributesByCategory',
             'limit',
             'categorySearch',
-            'mappedCategories'
+            'mappedCategories',
+            'requiredAttributesByCategory'
         ));
     }
 

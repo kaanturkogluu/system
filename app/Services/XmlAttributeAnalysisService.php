@@ -6,6 +6,7 @@ use App\Models\Attribute;
 use App\Models\Category;
 use App\Models\CategoryMapping;
 use App\Models\ImportItem;
+use App\Models\XmlAttributeMapping;
 use Illuminate\Support\Str;
 
 class XmlAttributeAnalysisService
@@ -70,6 +71,21 @@ class XmlAttributeAnalysisService
             // Extract ONLY from TeknikOzellikler structure
             // XML ürün özellikleri için sadece TeknikOzellikler tag'inde gelen veriler kullanılacak
             $this->extractTeknikOzellikler($payload, $xmlAttributes, $categoryInfo);
+        }
+
+        // Filter out "diger/diğer" keys (case-insensitive with Turkish character normalization)
+        $skipKeys = ['diger', 'Diger', 'DİGER', 'DİĞER', 'diğer', 'Diğer', 'DiĞer'];
+        foreach ($xmlAttributes as $key => $value) {
+            $normalizedKey = mb_strtolower(trim($key), 'UTF-8');
+            // Normalize Turkish characters for comparison
+            $normalizedKey = str_replace(['ı', 'ğ', 'ü', 'ş', 'ö', 'ç'], ['i', 'g', 'u', 's', 'o', 'c'], $normalizedKey);
+            $normalizedSkipKeys = array_map(function($skipKey) {
+                return str_replace(['ı', 'ğ', 'ü', 'ş', 'ö', 'ç'], ['i', 'g', 'u', 's', 'o', 'c'], mb_strtolower($skipKey, 'UTF-8'));
+            }, $skipKeys);
+            
+            if (in_array($normalizedKey, $normalizedSkipKeys)) {
+                unset($xmlAttributes[$key]);
+            }
         }
 
         return $xmlAttributes;
@@ -162,8 +178,16 @@ class XmlAttributeAnalysisService
                         $ozellik = trim($item['Ozellik']);
                         $deger = $item['Deger'];
 
-                        // Skip "Marka" attribute
-                        if (strtolower($ozellik) === 'marka') {
+                        // Skip system attributes
+                        $skipKeys = ['marka', 'diger', 'diğer', 'açıklama', 'açıklama2'];
+                        $normalizedOzellik = mb_strtolower(trim($ozellik), 'UTF-8');
+                        // Normalize Turkish characters
+                        $normalizedOzellik = str_replace(['ı', 'ğ', 'ü', 'ş', 'ö', 'ç'], ['i', 'g', 'u', 's', 'o', 'c'], $normalizedOzellik);
+                        $normalizedSkipKeys = array_map(function($key) {
+                            return str_replace(['ı', 'ğ', 'ü', 'ş', 'ö', 'ç'], ['i', 'g', 'u', 's', 'o', 'c'], mb_strtolower($key, 'UTF-8'));
+                        }, $skipKeys);
+                        
+                        if (in_array($normalizedOzellik, $normalizedSkipKeys)) {
                             continue;
                         }
 
@@ -205,8 +229,16 @@ class XmlAttributeAnalysisService
                     $ozellik = trim($urunTeknikOzellikler['Ozellik']);
                     $deger = $urunTeknikOzellikler['Deger'];
 
-                    // Skip "Marka" attribute
-                    if (strtolower($ozellik) === 'marka') {
+                    // Skip system attributes
+                    $skipKeys = ['marka', 'diger', 'diğer', 'açıklama', 'açıklama2'];
+                    $normalizedOzellik = mb_strtolower(trim($ozellik), 'UTF-8');
+                    // Normalize Turkish characters
+                    $normalizedOzellik = str_replace(['ı', 'ğ', 'ü', 'ş', 'ö', 'ç'], ['i', 'g', 'u', 's', 'o', 'c'], $normalizedOzellik);
+                    $normalizedSkipKeys = array_map(function($key) {
+                        return str_replace(['ı', 'ğ', 'ü', 'ş', 'ö', 'ç'], ['i', 'g', 'u', 's', 'o', 'c'], mb_strtolower($key, 'UTF-8'));
+                    }, $skipKeys);
+                    
+                    if (in_array($normalizedOzellik, $normalizedSkipKeys)) {
                         return;
                     }
 
@@ -326,9 +358,50 @@ class XmlAttributeAnalysisService
             ->pluck('code', 'id')
             ->toArray();
 
+        // Get existing mappings
+        $existingMappings = XmlAttributeMapping::where('source_type', 'xml')
+            ->where('status', 'active')
+            ->with('attribute')
+            ->get()
+            ->keyBy('source_attribute_key');
+
         $analysis = [];
 
+        // Skip keys that should be ignored (case-insensitive with Turkish character normalization)
+        $skipKeys = ['diger', 'Diger', 'DİGER', 'DİĞER', 'diğer', 'Diğer', 'DiĞer'];
+
         foreach ($xmlAttributes as $xmlKey => $data) {
+            // Skip "diger/diğer" key
+            $normalizedKey = mb_strtolower(trim($xmlKey), 'UTF-8');
+            // Normalize Turkish characters for comparison
+            $normalizedKey = str_replace(['ı', 'ğ', 'ü', 'ş', 'ö', 'ç'], ['i', 'g', 'u', 's', 'o', 'c'], $normalizedKey);
+            $normalizedSkipKeys = array_map(function($skipKey) {
+                return str_replace(['ı', 'ğ', 'ü', 'ş', 'ö', 'ç'], ['i', 'g', 'u', 's', 'o', 'c'], mb_strtolower($skipKey, 'UTF-8'));
+            }, $skipKeys);
+            
+            if (in_array($normalizedKey, $normalizedSkipKeys)) {
+                continue;
+            }
+            // Check if there's an existing mapping first
+            if (isset($existingMappings[$xmlKey]) && $existingMappings[$xmlKey]->attribute) {
+                $mapping = $existingMappings[$xmlKey];
+                $attribute = $mapping->attribute;
+                
+                $analysis[] = [
+                    'xml_attribute_key' => $xmlKey,
+                    'suggested_global_code' => $this->suggestNormalizedCode($xmlKey),
+                    'matched_attribute_id' => $attribute->id,
+                    'matched_attribute_code' => $attribute->code,
+                    'confidence' => 'MAPPED', // Special confidence level for existing mappings
+                    'example_values' => $data['example_values'],
+                    'product_count' => $data['product_count'],
+                    'categories' => $data['categories'] ?? [],
+                    'category_names' => $data['category_names'] ?? [],
+                ];
+                continue;
+            }
+
+            // No existing mapping, try to auto-match
             $suggestedCode = $this->suggestNormalizedCode($xmlKey);
             $match = $this->findMatchingAttribute($xmlKey, $suggestedCode, $globalAttributes);
 

@@ -132,8 +132,9 @@ class AnalyzeXmlAttributes extends Command
                         $ozellik = trim($item['Ozellik']);
                         $deger = $item['Deger'];
 
-                        // Skip "Marka" attribute
-                        if (strtolower($ozellik) === 'marka') {
+                        // Skip system attributes
+                        $skipKeys = ['marka', 'diger', 'açıklama', 'açıklama2'];
+                        if (in_array(strtolower($ozellik), $skipKeys)) {
                             continue;
                         }
 
@@ -167,8 +168,9 @@ class AnalyzeXmlAttributes extends Command
                     $ozellik = trim($urunTeknikOzellikler['Ozellik']);
                     $deger = $urunTeknikOzellikler['Deger'];
 
-                    // Skip "Marka" attribute
-                    if (strtolower($ozellik) === 'marka') {
+                    // Skip system attributes
+                    $skipKeys = ['marka', 'diger', 'açıklama', 'açıklama2'];
+                    if (in_array(strtolower($ozellik), $skipKeys)) {
                         return;
                     }
 

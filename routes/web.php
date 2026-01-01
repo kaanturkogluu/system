@@ -74,6 +74,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/xml-products', [\App\Http\Controllers\Admin\XmlProductController::class, 'index'])->name('xml-products.index');
         Route::get('/xml-products/{id}', [\App\Http\Controllers\Admin\XmlProductController::class, 'show'])->name('xml-products.show');
         
+        // Ready Products (Gönderilmeye Hazır Ürünler)
+        Route::get('/ready-products', [\App\Http\Controllers\Admin\ReadyProductController::class, 'index'])->name('ready-products.index');
+        
         // XML Attribute Analysis
         Route::prefix('xml-attribute-analysis')->name('xml-attribute-analysis.')->group(function () {
             Route::get('/', [\App\Http\Controllers\Admin\XmlAttributeAnalysisController::class, 'index'])->name('index');
