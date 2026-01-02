@@ -95,8 +95,10 @@ class ImportItemJob implements ShouldQueue
                 $productTitle = $this->getNestedValue($payload, ['product', 'title'])
                     ?? $payload['Ad'] ?? $payload['Title'] ?? $payload['ProductTitle'] ?? null;
                 
-                $productDescription = $this->getNestedValue($payload, ['product', 'description'])
-                    ?? $payload['Aciklama'] ?? $payload['Description'] ?? $payload['Detay'] ?? null;
+                // Detay verisi öncelikli olarak description'a yazılacak
+                $productDescription = $payload['Detay'] 
+                    ?? $this->getNestedValue($payload, ['product', 'description'])
+                    ?? $payload['Aciklama'] ?? $payload['Description'] ?? null;
                 
                 // Desi bilgisini al (XML'den)
                 $desi = $this->getNestedValue($payload, ['product', 'desi'])
