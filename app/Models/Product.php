@@ -18,6 +18,7 @@ class Product extends Model
         'barcode',
         'title',
         'description',
+        'desi',
         'brand_id',
         'category_id',
         'product_type',
@@ -33,6 +34,7 @@ class Product extends Model
         'category_id' => 'integer',
         'currency_id' => 'integer',
         'reference_price' => 'decimal:2',
+        'desi' => 'decimal:2',
         'raw_xml' => 'array',
     ];
 

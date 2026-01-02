@@ -160,6 +160,7 @@
                                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Matched Attribute</th>
                                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Products</th>
                                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Examples</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">İşlem</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -182,6 +183,14 @@
                                             <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ $item['product_count'] }}</td>
                                             <td class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">
                                                 {{ implode(', ', array_slice($item['example_values'], 0, 3)) }}
+                                            </td>
+                                            <td class="px-4 py-2 text-sm">
+                                                <button 
+                                                    onclick="openMappingModalWithCategory('{{ $item['xml_attribute_key'] }}', {{ $item['matched_attribute_id'] ?? 'null' }}, {{ $categoryGroup['category_id'] ?? 'null' }})"
+                                                    class="text-blue-600 dark:text-blue-400 hover:underline"
+                                                >
+                                                    Manuel Eşleştir
+                                                </button>
                                             </td>
                                         </tr>
                                     @endforeach
@@ -297,6 +306,7 @@
                                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Matched Attribute</th>
                                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Products</th>
                                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Examples</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">İşlem</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -319,6 +329,14 @@
                                     <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">{{ $item['product_count'] }}</td>
                                     <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                                         {{ implode(', ', array_slice($item['example_values'], 0, 3)) }}
+                                    </td>
+                                    <td class="px-4 py-3 text-sm">
+                                        <button 
+                                            onclick="openMappingModalWithCategory('{{ $item['xml_attribute_key'] }}', {{ $item['matched_attribute_id'] ?? 'null' }}, {{ !empty($item['categories']) ? $item['categories'][0] : 'null' }})"
+                                            class="text-blue-600 dark:text-blue-400 hover:underline"
+                                        >
+                                            Manuel Eşleştir
+                                        </button>
                                     </td>
                                 </tr>
                             @endforeach
@@ -538,7 +556,9 @@ function openMappingModalWithCategory(xmlKey, attributeId, categoryId) {
     
     modalXmlKey.value = xmlKey;
     modalXmlKeyDisplay.textContent = xmlKey;
-    modalAttributeId.value = attributeId || '';
+    // Handle attributeId - convert 'null' string to empty string
+    const attributeIdValue = (attributeId && attributeId !== 'null' && attributeId !== null) ? attributeId : '';
+    modalAttributeId.value = attributeIdValue;
     
     // Filter attributes by category
     const select = modalAttributeId;

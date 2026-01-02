@@ -98,6 +98,15 @@ class ImportItemJob implements ShouldQueue
                 $productDescription = $this->getNestedValue($payload, ['product', 'description'])
                     ?? $payload['Aciklama'] ?? $payload['Description'] ?? $payload['Detay'] ?? null;
                 
+                // Desi bilgisini al (XML'den)
+                $desi = $this->getNestedValue($payload, ['product', 'desi'])
+                    ?? $payload['Desi'] ?? $payload['desi'] ?? $payload['DimensionalWeight'] ?? null;
+                // Desi'yi decimal'e çevir (varsa)
+                $desiValue = null;
+                if ($desi !== null && $desi !== '') {
+                    $desiValue = is_numeric($desi) ? (float) $desi : null;
+                }
+                
                 $brandName = $this->getNestedValue($payload, ['product', 'brand'])
                     ?? $payload['Marka'] ?? $payload['Brand'] ?? null;
                 
@@ -212,6 +221,7 @@ class ImportItemJob implements ShouldQueue
                         'barcode' => $barcode,
                         'title' => $productTitle ?? 'Başlıksız Ürün',
                         'description' => $productDescription,
+                        'desi' => $desiValue,
                         'brand_id' => $brandId,
                         'category_id' => $categoryId,
                         'product_type' => 'simple',

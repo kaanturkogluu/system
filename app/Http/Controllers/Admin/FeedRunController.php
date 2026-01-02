@@ -358,6 +358,70 @@ class FeedRunController extends Controller
     }
 
     /**
+     * Re-import a feed run (reset import items to PENDING and re-parse)
+     */
+    public function reimport(FeedRun $feedRun)
+    {
+        try {
+            // Kontroller
+            if (!$feedRun->file_path || !Storage::exists($feedRun->file_path)) {
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('error', "Feed Run #{$feedRun->id} için dosya bulunamadı.");
+            }
+
+            DB::beginTransaction();
+
+            // Bu feed_run'a ait tüm import_item'ların status'ünü PENDING yap
+            $updatedCount = ImportItem::where('feed_run_id', $feedRun->id)
+                ->where('status', '!=', 'PENDING')
+                ->update(['status' => 'PENDING']);
+
+            Log::channel('imports')->info('Feed run re-import initiated', [
+                'feed_run_id' => $feedRun->id,
+                'updated_items_count' => $updatedCount,
+            ]);
+
+            // Feed run status'ünü PENDING yap
+            $feedRun->update([
+                'status' => 'PENDING',
+                'started_at' => null,
+                'ended_at' => null,
+            ]);
+
+            DB::commit();
+
+            // Parse işlemini başlat
+            $command = new \App\Console\Commands\ParseFeedsCommand();
+            $reflection = new \ReflectionClass($command);
+            $method = $reflection->getMethod('parseFeedRun');
+            $method->setAccessible(true);
+            
+            $result = $method->invoke($command, $feedRun);
+            
+            if ($result['success']) {
+                $feedRun->refresh();
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('success', "Feed Run #{$feedRun->id} yeniden aktarıldı. {$updatedCount} item PENDING yapıldı, {$result['items_count']} item parse edildi.");
+            } else {
+                return redirect()->route('admin.feed-runs.index')
+                    ->with('error', "Feed Run #{$feedRun->id} yeniden aktarılamadı: {$result['error']}");
+            }
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::channel('imports')->error('Feed run re-import failed', [
+                'feed_run_id' => $feedRun->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return redirect()->route('admin.feed-runs.index')
+                ->with('error', 'Yeniden aktarma işlemi sırasında hata oluştu: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Start queue worker in background
      */
     private function startQueueWorker(): void

@@ -305,6 +305,24 @@
                                             </button>
                                         </form>
                                     @endif
+                                    
+                                    @if(in_array($feedRun->status, ['DONE', 'PARSED', 'UPSERTED']) && $feedRun->file_path && $feedRun->file_exists)
+                                        <form 
+                                            method="POST" 
+                                            action="{{ route('admin.feed-runs.reimport', $feedRun) }}"
+                                            class="inline"
+                                            onsubmit="return confirm('Bu feed run\'ı yeniden aktarmak istediğinizden emin misiniz? Bu işlem mevcut import item\'ların durumunu PENDING yapacak ve dosyayı tekrar parse edecektir.');"
+                                        >
+                                            @csrf
+                                            <button 
+                                                type="submit"
+                                                class="text-orange-600 dark:text-orange-400 hover:text-orange-900 dark:hover:text-orange-300 font-medium"
+                                                title="Yeniden Aktar"
+                                            >
+                                                Yeniden Aktar
+                                            </button>
+                                        </form>
+                                    @endif
                                 </div>
                             </td>
                         </tr>
