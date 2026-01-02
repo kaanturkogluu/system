@@ -4,10 +4,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\DashboardController;
 
-// Public Routes
-Route::get('/', function () {
-    return view('welcome');
-});
+// Public Routes - Product Listing
+Route::get('/', [\App\Http\Controllers\Web\ProductController::class, 'index'])->name('products.index');
+Route::get('/urun/{product}', [\App\Http\Controllers\Web\ProductController::class, 'show'])->name('products.show');
 
 // Login route for auth middleware redirect
 Route::get('/login', function () {
