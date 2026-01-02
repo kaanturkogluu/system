@@ -32,6 +32,7 @@ class DatabaseSeeder extends Seeder
             FeedSourceSeeder::class,
             CountrySeeder::class,
             MarketplaceCountryMappingSeeder::class,
+            TrendyolShippingCompanySeeder::class,
         ]);
     }
 }
