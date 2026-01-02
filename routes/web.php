@@ -50,6 +50,15 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::resource('marketplaces', \App\Http\Controllers\Admin\MarketplaceController::class);
         Route::get('/marketplaces/{marketplace}/settings', [\App\Http\Controllers\Admin\MarketplaceController::class, 'settings'])->name('marketplaces.settings');
         Route::post('/marketplaces/{marketplace}/settings', [\App\Http\Controllers\Admin\MarketplaceController::class, 'updateSettings'])->name('marketplaces.settings.update');
+        Route::get('/marketplaces/{marketplace}/shipping-companies', [\App\Http\Controllers\Admin\MarketplaceController::class, 'shippingCompanies'])->name('marketplaces.shipping-companies');
+        Route::post('/marketplaces/{marketplace}/default-shipping-company', [\App\Http\Controllers\Admin\MarketplaceController::class, 'updateDefaultShippingCompany'])->name('marketplaces.update-default-shipping-company');
+        
+        // Shipping Companies
+        Route::get('/shipping-companies', [\App\Http\Controllers\Admin\ShippingCompanyController::class, 'index'])->name('shipping-companies.index');
+        Route::get('/shipping-companies/{shippingCompany}/edit', [\App\Http\Controllers\Admin\ShippingCompanyController::class, 'edit'])->name('shipping-companies.edit');
+        Route::put('/shipping-companies/{shippingCompany}', [\App\Http\Controllers\Admin\ShippingCompanyController::class, 'update'])->name('shipping-companies.update');
+        Route::post('/shipping-companies/{shippingCompany}/mapping', [\App\Http\Controllers\Admin\ShippingCompanyController::class, 'updateMapping'])->name('shipping-companies.update-mapping');
+        Route::delete('/shipping-companies/{shippingCompany}/mapping/{mapping}', [\App\Http\Controllers\Admin\ShippingCompanyController::class, 'deleteMapping'])->name('shipping-companies.delete-mapping');
         
         // Feed Sources
         Route::resource('feed-sources', \App\Http\Controllers\Admin\FeedSourceController::class);

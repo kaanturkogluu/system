@@ -142,5 +142,50 @@ class MarketplaceController extends Controller
         return redirect()->route('admin.marketplaces.settings', $marketplace)
             ->with('success', 'Ayarlar başarıyla güncellendi.');
     }
+
+    /**
+     * Show default shipping company selection form
+     */
+    public function shippingCompanies(Marketplace $marketplace)
+    {
+        $shippingCompanyMappings = \App\Models\MarketplaceShippingCompanyMapping::where('marketplace_id', $marketplace->id)
+            ->with('shippingCompany')
+            ->orderBy('is_default', 'desc')
+            ->orderBy('external_name')
+            ->get();
+
+        $allShippingCompanies = \App\Models\ShippingCompany::where('status', 'active')
+            ->orderBy('name')
+            ->get();
+
+        return view('admin.marketplaces.shipping-companies', compact('marketplace', 'shippingCompanyMappings', 'allShippingCompanies'));
+    }
+
+    /**
+     * Update default shipping company for marketplace
+     */
+    public function updateDefaultShippingCompany(Request $request, Marketplace $marketplace)
+    {
+        $validated = $request->validate([
+            'default_shipping_company_mapping_id' => 'nullable|exists:marketplace_shipping_company_mappings,id',
+        ], [
+            'default_shipping_company_mapping_id.exists' => 'Seçilen kargo şirketi eşleştirmesi bulunamadı.',
+        ]);
+
+        // Remove default from all mappings for this marketplace
+        \App\Models\MarketplaceShippingCompanyMapping::where('marketplace_id', $marketplace->id)
+            ->update(['is_default' => false]);
+
+        // Set new default if provided
+        if ($validated['default_shipping_company_mapping_id']) {
+            $mapping = \App\Models\MarketplaceShippingCompanyMapping::find($validated['default_shipping_company_mapping_id']);
+            if ($mapping && $mapping->marketplace_id === $marketplace->id) {
+                $mapping->update(['is_default' => true]);
+            }
+        }
+
+        return redirect()->route('admin.marketplaces.shipping-companies', $marketplace)
+            ->with('success', 'Varsayılan kargo şirketi başarıyla güncellendi.');
+    }
 }
 

@@ -128,6 +128,15 @@
                                         </svg>
                                     </a>
                                     <a 
+                                        href="{{ route('admin.marketplaces.shipping-companies', $marketplace) }}" 
+                                        class="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300"
+                                        title="Kargo Şirketleri"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                                        </svg>
+                                    </a>
+                                    <a 
                                         href="{{ route('admin.marketplaces.edit', $marketplace) }}" 
                                         class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
                                     >

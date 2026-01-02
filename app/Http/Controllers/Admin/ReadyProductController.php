@@ -8,6 +8,9 @@ use App\Models\Category;
 use App\Models\CategoryAttribute;
 use App\Models\AttributeValue;
 use App\Models\XmlAttributeMapping;
+use App\Models\Marketplace;
+use App\Models\MarketplaceShippingCompanyMapping;
+use App\Helpers\MarketplaceConfig;
 use App\Services\ProductAttributePersistenceService;
 use Illuminate\Http\Request;
 
@@ -176,9 +179,9 @@ class ReadyProductController extends Controller
     {
         // Temel bilgiler
         $data = [
-            'barcode' => $product->barcode ?: 'Sistemde Veri yok',
+            'barcode' => $this->getBarcodeWithPrefix($product),
             'title' => $product->title ?: 'Sistemde Veri yok',
-            'productMainId' => $product->sku ?: $product->source_reference ?: 'Sistemde Veri yok',
+            'productMainId' => $product->id,
             'brandId' => $product->brand_id ?: 'Sistemde Veri yok',
             'categoryId' => $product->category_id ?: 'Sistemde Veri yok',
             'quantity' => $this->getTotalStock($product),
@@ -188,8 +191,8 @@ class ReadyProductController extends Controller
             'currencyType' => $product->currency ?: 'TRY',
             'listPrice' => $product->reference_price ?: 'Sistemde Veri yok',
             'salePrice' => $this->getSalePrice($product),
-            'vatRate' => 'Sistemde Veri yok',
-            'cargoCompanyId' => 'Sistemde Veri yok',
+            'vatRate' => 18,
+            'cargoCompanyId' => $this->getCargoCompanyId($product),
             'lotNumber' => 'Sistemde Veri yok',
             'specialConsumptionTax' => 'Sistemde Veri yok',
             'deliveryOption' => [
@@ -205,14 +208,14 @@ class ReadyProductController extends Controller
 
     /**
      * Toplam stok miktarını hesapla
+     * Ürünün sistemdeki adet miktarını döndürür (variant'ların stock toplamı)
      */
-    private function getTotalStock(Product $product): string|int
+    private function getTotalStock(Product $product): int
     {
         if ($product->variants && $product->variants->count() > 0) {
-            $totalStock = $product->variants->sum('stock');
-            return $totalStock > 0 ? $totalStock : 'Sistemde Veri yok';
+            return (int) $product->variants->sum('stock');
         }
-        return 'Sistemde Veri yok';
+        return 0;
     }
 
     /**
@@ -240,6 +243,56 @@ class ReadyProductController extends Controller
             })->toArray();
         }
         return [];
+    }
+
+    /**
+     * Pazaryeri için varsayılan kargo şirketinin external_id değerini al
+     * Varsayılan olarak Trendyol kullanılır
+     */
+    private function getCargoCompanyId(Product $product, string $marketplaceSlug = 'trendyol'): string|int
+    {
+        // Pazaryerini bul
+        $marketplace = Marketplace::where('slug', $marketplaceSlug)->first();
+        
+        if (!$marketplace) {
+            return 'Sistemde Veri yok';
+        }
+
+        // Pazaryeri için varsayılan kargo şirketini bul
+        $defaultShippingCompany = MarketplaceShippingCompanyMapping::where('marketplace_id', $marketplace->id)
+            ->where('is_default', true)
+            ->where('status', 'active')
+            ->first();
+
+        if (!$defaultShippingCompany || !$defaultShippingCompany->external_id) {
+            return 'Sistemde Veri yok';
+        }
+
+        return $defaultShippingCompany->external_id;
+    }
+
+    /**
+     * Barkod'a pazaryeri prefix'ini ekle
+     * Varsayılan olarak Trendyol kullanılır
+     */
+    private function getBarcodeWithPrefix(Product $product, string $marketplaceSlug = 'trendyol'): string
+    {
+        $barcode = $product->barcode;
+        
+        if (!$barcode || $barcode === 'Sistemde Veri yok') {
+            return 'Sistemde Veri yok';
+        }
+
+        // Pazaryeri için barcode prefix'ini al
+        $prefix = MarketplaceConfig::get($marketplaceSlug, 'barcode_prefix', null);
+        
+        // Prefix varsa ekle
+        if ($prefix && trim($prefix) !== '') {
+            return trim($prefix) . $barcode;
+        }
+
+        // Prefix yoksa orijinal barcode'u döndür
+        return $barcode;
     }
 
     /**

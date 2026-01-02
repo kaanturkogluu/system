@@ -197,6 +197,25 @@
                         API istekleri için timeout süresi (varsayılan: 30 saniye)
                     </p>
                 </div>
+
+                <!-- Barcode Prefix -->
+                <div>
+                    <label for="settings_barcode_prefix" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Barkod Ön Eki
+                    </label>
+                    <input 
+                        type="text" 
+                        id="settings_barcode_prefix" 
+                        name="settings[barcode_prefix]" 
+                        value="{{ old('settings.barcode_prefix', $settings['barcode_prefix'] ?? '') }}"
+                        maxlength="20"
+                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        placeholder="GNS"
+                    >
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        Pazaryerine gönderilecek ürün barkodlarına eklenecek ön ek (örn: GNS). Örnek: "4719072749927" → "GNS4719072749927"
+                    </p>
+                </div>
             </div>
 
             <!-- Info Box -->
