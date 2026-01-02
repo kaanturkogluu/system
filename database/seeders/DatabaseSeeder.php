@@ -33,6 +33,7 @@ class DatabaseSeeder extends Seeder
             CountrySeeder::class,
             MarketplaceCountryMappingSeeder::class,
             TrendyolShippingCompanySeeder::class,
+            CurrencySeeder::class,
         ]);
     }
 }

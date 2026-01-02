@@ -23,6 +23,7 @@ class Product extends Model
         'product_type',
         'reference_price',
         'currency',
+        'currency_id',
         'status',
         'raw_xml',
     ];
@@ -30,6 +31,7 @@ class Product extends Model
     protected $casts = [
         'brand_id' => 'integer',
         'category_id' => 'integer',
+        'currency_id' => 'integer',
         'reference_price' => 'decimal:2',
         'raw_xml' => 'array',
     ];
@@ -72,6 +74,14 @@ class Product extends Model
     public function productAttributes()
     {
         return $this->hasMany(ProductAttribute::class, 'product_id');
+    }
+
+    /**
+     * Currency ilişkisi
+     */
+    public function currencyRelation()
+    {
+        return $this->belongsTo(Currency::class, 'currency_id');
     }
 }
 
