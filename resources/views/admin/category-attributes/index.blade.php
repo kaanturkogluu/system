@@ -24,29 +24,35 @@
         
         <div class="space-y-1 max-h-96 overflow-y-auto" id="category-tree">
             @php
-                function renderCategoryTree($category, $level = 0) {
-                    $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
+                $selectedCategoryId = isset($categoryId) && $categoryId ? (int)$categoryId : null;
+                
+                function renderCategoryTree($category, $level = 0, $selectedCategoryId = null) {
                     $hasChildren = $category->children->count() > 0;
-                    $isSelected = request('category_id') == $category->id;
-                    $selectedClass = $isSelected ? 'bg-blue-100 dark:bg-blue-900' : 'hover:bg-gray-100 dark:hover:bg-gray-700';
+                    $isSelected = $selectedCategoryId !== null && (int)$selectedCategoryId === (int)$category->id;
+                    $selectedClass = $isSelected ? 'bg-blue-100 dark:bg-blue-900 font-semibold' : 'hover:bg-gray-100 dark:hover:bg-gray-700';
+                    $marginLeft = $level * 16;
                     
                     $html = '<a href="' . route('admin.category-attributes.index', ['category_id' => $category->id]) . '" ';
-                    $html .= 'class="block px-3 py-2 rounded ' . $selectedClass . '" ';
-                    $html .= 'style="margin-left: ' . ($level * 16) . 'px;">';
+                    $html .= 'class="block px-3 py-2 rounded transition ' . $selectedClass . '" ';
+                    $html .= 'data-category-id="' . $category->id . '" ';
+                    if ($isSelected) {
+                        $html .= 'data-selected="true" ';
+                    }
+                    $html .= 'style="margin-left: ' . $marginLeft . 'px;">';
                     $html .= ($hasChildren ? '📁 ' : '📄 ') . htmlspecialchars($category->name);
                     $html .= '</a>';
                     
                     if ($hasChildren) {
                         foreach ($category->children as $child) {
-                            $html .= renderCategoryTree($child, $level + 1);
+                            $html .= renderCategoryTree($child, $level + 1, $selectedCategoryId);
                         }
                     }
                     
                     return $html;
                 }
             @endphp
-            @foreach($categories as $category)
-                {!! renderCategoryTree($category, 0) !!}
+            @foreach($categories as $cat)
+                {!! renderCategoryTree($cat, 0, $selectedCategoryId) !!}
             @endforeach
         </div>
     </div>
@@ -58,28 +64,45 @@
             
             if (!searchInput || !categoryTree) return;
             
-            // Store original display states
             const allCategoryLinks = Array.from(categoryTree.querySelectorAll('a'));
+            const selectedCategoryId = {{ $categoryId ?? 'null' }};
+            
+            // Scroll to selected category on page load
+            if (selectedCategoryId) {
+                const selectedLink = categoryTree.querySelector('a[data-selected="true"]');
+                if (selectedLink) {
+                    setTimeout(function() {
+                        selectedLink.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 100);
+                }
+            }
             
             searchInput.addEventListener('input', function(e) {
                 const searchTerm = e.target.value.toLowerCase().trim();
                 
                 if (searchTerm === '') {
-                    // Show all categories
-                    allCategoryLinks.forEach(link => {
+                    allCategoryLinks.forEach(function(link) {
                         link.style.display = 'block';
                     });
+                    // Scroll to selected category again
+                    if (selectedCategoryId) {
+                        const selectedLink = categoryTree.querySelector('a[data-selected="true"]');
+                        if (selectedLink) {
+                            setTimeout(function() {
+                                selectedLink.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }, 100);
+                        }
+                    }
                     return;
                 }
                 
-                // Filter categories
-                allCategoryLinks.forEach(link => {
+                allCategoryLinks.forEach(function(link) {
                     const categoryName = link.textContent.toLowerCase();
                     const matches = categoryName.includes(searchTerm);
                     
                     if (matches) {
                         link.style.display = 'block';
-                        // Show all parent categories
+                        // Show parent categories
                         let parent = link.parentElement;
                         while (parent && parent !== categoryTree) {
                             const parentLink = parent.querySelector('a');
@@ -103,6 +126,20 @@
                 <div class="flex items-center justify-between mb-4">
                     <div>
                         <h3 class="text-lg font-semibold">Kategori: {{ $category->name }}</h3>
+                        @if(isset($categoryPath) && count($categoryPath) > 1)
+                            <div class="text-sm text-gray-500 mt-1 flex items-center gap-1">
+                                <span>Yol:</span>
+                                @foreach($categoryPath as $index => $pathCategory)
+                                    <a href="{{ route('admin.category-attributes.index', ['category_id' => $pathCategory->id]) }}" 
+                                       class="text-blue-600 dark:text-blue-400 hover:underline">
+                                        {{ $pathCategory->name }}
+                                    </a>
+                                    @if($index < count($categoryPath) - 1)
+                                        <span class="text-gray-400">→</span>
+                                    @endif
+                                @endforeach
+                            </div>
+                        @endif
                         <p class="text-sm text-gray-500 mt-1">Toplam {{ $categoryAttributes->count() }} özellik</p>
                     </div>
                     <div class="flex gap-2">

@@ -12,12 +12,31 @@ class CategoryAttributeController extends Controller
 {
     public function index(Request $request)
     {
+        // Get category_id from request and ensure it's an integer
         $categoryId = $request->get('category_id');
+        if ($categoryId) {
+            $categoryId = (int) $categoryId;
+        }
+        
         $category = null;
         $categoryAttributes = collect();
+        $categoryPath = [];
 
         if ($categoryId) {
-            $category = Category::with('parent')->findOrFail($categoryId);
+            // Load category with all parents
+            $category = Category::with('parent')->find($categoryId);
+            
+            if (!$category) {
+                abort(404, 'Kategori bulunamadı: ' . $categoryId);
+            }
+            
+            // Build category path (parent -> child hierarchy)
+            $current = $category;
+            while ($current) {
+                array_unshift($categoryPath, $current);
+                $current = $current->parent;
+            }
+            
             $categoryAttributes = CategoryAttribute::where('category_id', $categoryId)
                 ->with('attribute')
                 ->orderBy('is_required', 'desc')
@@ -48,7 +67,9 @@ class CategoryAttributeController extends Controller
             'category',
             'categoryAttributes',
             'allAttributes',
-            'searchQuery'
+            'searchQuery',
+            'categoryId',
+            'categoryPath'
         ));
     }
 

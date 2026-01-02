@@ -34,6 +34,9 @@ class DatabaseSeeder extends Seeder
             MarketplaceCountryMappingSeeder::class,
             TrendyolShippingCompanySeeder::class,
             CurrencySeeder::class,
+            MarketplaceSettingsSeeder::class,
+            MarketplaceBrandSearchResultsSeeder::class,
+            // TrendyolCategories::class, // Opsiyonel: Büyük JSON dosyası gerektirir
         ]);
     }
 }
