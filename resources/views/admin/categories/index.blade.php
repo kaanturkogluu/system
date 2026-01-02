@@ -5,6 +5,26 @@
 
 @section('content')
 <div class="space-y-6">
+    <!-- Import Button -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Trendyol Kategori İçe Aktarma</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Trendyol API'den kategorileri indirip sisteme aktarın</p>
+            </div>
+            <button 
+                type="button"
+                id="importTrendyolBtn"
+                class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg transition duration-200 flex items-center"
+            >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+                İçeriye Aktar
+            </button>
+        </div>
+    </div>
+
     <!-- Filters and Search -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <form method="GET" action="{{ route('admin.categories.index') }}" class="space-y-4">
@@ -203,5 +223,219 @@
         @endif
     </div>
 </div>
+
+<!-- Import Modal -->
+<div id="importModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white dark:bg-gray-800">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Trendyol Kategorilerini İçe Aktar</h3>
+                <button type="button" id="closeModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div id="modalContent">
+                <!-- Content will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+@push('scripts')
+<script>
+(function() {
+    'use strict';
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM yüklendi, script çalışıyor...');
+        
+        const importBtn = document.getElementById('importTrendyolBtn');
+        
+        if (!importBtn) {
+            console.error('❌ İçeriye Aktar butonu bulunamadı!');
+            return;
+        }
+        
+        console.log('✅ İçeriye Aktar butonu bulundu');
+        
+        const modal = document.getElementById('importModal');
+        const closeModal = document.getElementById('closeModal');
+        const modalContent = document.getElementById('modalContent');
+
+        if (!modal || !closeModal || !modalContent) {
+            console.error('❌ Modal elementleri bulunamadı!');
+            return;
+        }
+
+        // Download and show categories
+        importBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('✅ İçeriye Aktar butonuna tıklandı');
+            
+            importBtn.disabled = true;
+            importBtn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>İndiriliyor...';
+
+            const csrfToken = document.querySelector('meta[name="csrf-token"]');
+            if (!csrfToken) {
+                alert('CSRF token bulunamadı!');
+                importBtn.disabled = false;
+                importBtn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>İçeriye Aktar';
+                return;
+            }
+
+            const url = '{{ route("admin.categories.download-trendyol") }}';
+            console.log('📤 İstek gönderiliyor:', url);
+
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken.content,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+            })
+            .then(response => {
+                console.log('📥 Yanıt alındı:', response.status);
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.message || 'HTTP ' + response.status);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('✅ Yanıt verisi:', data);
+                importBtn.disabled = false;
+                importBtn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>İçeriye Aktar';
+
+                if (data.success) {
+                    showCategorySelection(data.main_categories);
+                } else {
+                    alert('Hata: ' + (data.message || 'Bilinmeyen hata'));
+                }
+            })
+            .catch(error => {
+                console.error('❌ Hata:', error);
+                importBtn.disabled = false;
+                importBtn.innerHTML = '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>İçeriye Aktar';
+                alert('Hata oluştu: ' + error.message);
+            });
+        });
+
+        // Show category selection
+        function showCategorySelection(categories) {
+            let html = `
+            <div class="mb-4">
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    İçe aktarmak istediğiniz ana kategorileri seçin. Seçilen kategoriler ve alt kategorileri otomatik olarak sisteme aktarılacak ve Trendyol ile eşleştirilecektir.
+                </p>
+                <div class="max-h-96 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-4">
+                    <div class="space-y-2">
+            `;
+
+            categories.forEach(cat => {
+                html += `
+                    <label class="flex items-center p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                        <input type="checkbox" name="category_ids[]" value="${cat.id}" class="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm text-gray-900 dark:text-white">${cat.name} (ID: ${cat.id})</span>
+                    </label>
+                `;
+            });
+
+            html += `
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" id="cancelImport" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">
+                        İptal
+                    </button>
+                    <button type="button" id="confirmImport" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        İçe Aktar
+                    </button>
+                </div>
+            `;
+
+            modalContent.innerHTML = html;
+            modal.classList.remove('hidden');
+
+                // Confirm import
+                document.getElementById('confirmImport').addEventListener('click', function() {
+                    const selectedCategories = Array.from(document.querySelectorAll('input[name="category_ids[]"]:checked'))
+                        .map(cb => parseInt(cb.value));
+
+                    if (selectedCategories.length === 0) {
+                        alert('Lütfen en az bir kategori seçin.');
+                        return;
+                    }
+
+                    const confirmBtn = document.getElementById('confirmImport');
+                    confirmBtn.disabled = true;
+                    confirmBtn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>İçe Aktarılıyor...';
+
+                    fetch('{{ route("admin.categories.import") }}', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            category_ids: selectedCategories
+                        }),
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().then(data => {
+                                throw new Error(data.message || 'HTTP ' + response.status);
+                            });
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message);
+                            modal.classList.add('hidden');
+                            location.reload();
+                        } else {
+                            alert('Hata: ' + data.message);
+                            confirmBtn.disabled = false;
+                            confirmBtn.innerHTML = 'İçe Aktar';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Import hatası:', error);
+                        alert('Hata oluştu: ' + error.message);
+                        confirmBtn.disabled = false;
+                        confirmBtn.innerHTML = 'İçe Aktar';
+                    });
+                });
+
+                // Cancel
+                document.getElementById('cancelImport').addEventListener('click', function() {
+                    modal.classList.add('hidden');
+                });
+            }
+
+        // Close modal
+        closeModal.addEventListener('click', function() {
+            modal.classList.add('hidden');
+        });
+
+        // Close on outside click
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+            }
+        });
+    });
+})();
+</script>
+@endpush
 @endsection
 

@@ -1159,6 +1159,12 @@
                             "subCategories": []
                         },
                         {
+                            "id": 1015,
+                            "name": "Diğer Oyuncaklar",
+                            "parentId": 1010,
+                            "subCategories": []
+                        },
+                        {
                             "id": 1051,
                             "name": "Akülü & Pedallı Araçlar",
                             "parentId": 1010,
@@ -3017,7 +3023,7 @@
                                         },
                                         {
                                             "id": 5571,
-                                            "name": "Aşçı\/Şef Bone",
+                                            "name": "Aşçı/Şef Bone",
                                             "parentId": 5569,
                                             "subCategories": []
                                         }
@@ -6504,7 +6510,7 @@
                     "subCategories": [
                         {
                             "id": 484,
-                            "name": "Halı \/ Kilim",
+                            "name": "Halı / Kilim",
                             "parentId": 503,
                             "subCategories": [
                                 {
@@ -7006,7 +7012,7 @@
                                 },
                                 {
                                     "id": 2126,
-                                    "name": "Yatak \/ Baza Başlığı",
+                                    "name": "Yatak / Baza Başlığı",
                                     "parentId": 2088,
                                     "subCategories": []
                                 },
@@ -12505,7 +12511,7 @@
                         },
                         {
                             "id": 1845,
-                            "name": "Yazarkasa ve Terazi",
+                            "name": "Terazi",
                             "parentId": 1833,
                             "subCategories": []
                         },
@@ -12518,6 +12524,12 @@
                         {
                             "id": 4030,
                             "name": "Selefon Makinesi",
+                            "parentId": 1833,
+                            "subCategories": []
+                        },
+                        {
+                            "id": 5721,
+                            "name": "Yazarkasa ve Pos",
                             "parentId": 1833,
                             "subCategories": []
                         }
@@ -13818,6 +13830,12 @@
                             "name": "Dil Temizleyici",
                             "parentId": 1201,
                             "subCategories": []
+                        },
+                        {
+                            "id": 5672,
+                            "name": "Ağız Duşu",
+                            "parentId": 1201,
+                            "subCategories": []
                         }
                     ]
                 },
@@ -14315,7 +14333,7 @@
                         },
                         {
                             "id": 2948,
-                            "name": "Boya Açıcı ",
+                            "name": "Boya Açıcı",
                             "parentId": 1209,
                             "subCategories": []
                         },
@@ -18058,13 +18076,13 @@
                                 },
                                 {
                                     "id": 5257,
-                                    "name": "Balık Ağı ",
+                                    "name": "Balık Ağı",
                                     "parentId": 2202,
                                     "subCategories": []
                                 },
                                 {
                                     "id": 5258,
-                                    "name": "Hazır Olta Takımı ",
+                                    "name": "Hazır Olta Takımı",
                                     "parentId": 2202,
                                     "subCategories": []
                                 },
@@ -18285,7 +18303,7 @@
                                 },
                                 {
                                     "id": 3824,
-                                    "name": "Çanta Yağmurluğu\t",
+                                    "name": "Çanta Yağmurluğu",
                                     "parentId": 2908,
                                     "subCategories": []
                                 }
@@ -21731,7 +21749,7 @@
                                         },
                                         {
                                             "id": 5155,
-                                            "name": "Kuvertür Çikolata",
+                                            "name": "Kuvertür ve Pul Çikolata",
                                             "parentId": 1443,
                                             "subCategories": []
                                         },

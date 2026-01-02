@@ -25,6 +25,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::middleware('auth')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('/categories', [\App\Http\Controllers\Admin\CategoryController::class, 'index'])->name('categories.index');
+        Route::post('/categories/download-trendyol', [\App\Http\Controllers\Admin\CategoryController::class, 'downloadTrendyolCategories'])->name('categories.download-trendyol');
+        Route::get('/categories/get-main-categories', [\App\Http\Controllers\Admin\CategoryController::class, 'getMainCategories'])->name('categories.get-main-categories');
+        Route::post('/categories/import', [\App\Http\Controllers\Admin\CategoryController::class, 'importCategories'])->name('categories.import');
         
         // Attributes
         Route::resource('attributes', \App\Http\Controllers\Admin\AttributeController::class);
