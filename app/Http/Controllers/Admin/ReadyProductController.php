@@ -186,19 +186,17 @@ class ReadyProductController extends Controller
             'categoryId' => $product->category_id ?: 'Sistemde Veri yok',
             'quantity' => $this->getTotalStock($product),
             'stockCode' => 'Sistemde Veri yok',
-            'dimensionalWeight' => 'Sistemde Veri yok',
+            'dimensionalWeight' => $product->desi ?? 'Sistemde Veri yok',
             'description' => $product->description ?: 'Sistemde Veri yok',
             'currencyType' => $product->currency ?: 'TRY',
             'listPrice' => $product->reference_price ?: 'Sistemde Veri yok',
             'salePrice' => $this->getSalePrice($product),
-            'vatRate' => 18,
+            'vatRate' => $this->getVatRate($product),
+            'commissionRate' => $this->getCommissionRate($product),
             'cargoCompanyId' => $this->getCargoCompanyId($product),
             'lotNumber' => 'Sistemde Veri yok',
             'specialConsumptionTax' => 'Sistemde Veri yok',
-            'deliveryOption' => [
-                'deliveryDuration' => 'Sistemde Veri yok',
-                'fastDeliveryType' => 'Sistemde Veri yok',
-            ],
+            'deliveryDuration' => 1,
             'images' => $this->prepareImages($product),
             'attributes' => $this->prepareAttributes($product),
         ];
@@ -516,6 +514,48 @@ class ReadyProductController extends Controller
         $str = preg_replace('/\s+/', ' ', $str);
         
         return $str;
+    }
+
+    /**
+     * Komisyon oranını hesapla
+     * Öncelik sırası: 1) Ürüne özel, 2) Kategori bazlı, 3) Genel (default 20)
+     */
+    private function getCommissionRate(Product $product, string $marketplaceSlug = 'trendyol'): float
+    {
+        // 1. Ürüne özel komisyon
+        if ($product->commission_rate !== null) {
+            return (float) $product->commission_rate;
+        }
+
+        // 2. Kategori bazlı komisyon
+        if ($product->category && $product->category->commission_rate !== null) {
+            return (float) $product->category->commission_rate;
+        }
+
+        // 3. Genel komisyon (marketplace settings'den, default 20)
+        $defaultCommission = MarketplaceConfig::get($marketplaceSlug, 'default_commission_rate', '20');
+        return (float) $defaultCommission;
+    }
+
+    /**
+     * KDV oranını hesapla
+     * Öncelik sırası: 1) Ürüne özel, 2) Kategori bazlı, 3) Genel (default 20)
+     */
+    private function getVatRate(Product $product, string $marketplaceSlug = 'trendyol'): int
+    {
+        // 1. Ürüne özel KDV
+        if ($product->vat_rate !== null) {
+            return (int) $product->vat_rate;
+        }
+
+        // 2. Kategori bazlı KDV
+        if ($product->category && $product->category->vat_rate !== null) {
+            return (int) $product->category->vat_rate;
+        }
+
+        // 3. Genel KDV (marketplace settings'den, default 20)
+        $defaultVatRate = MarketplaceConfig::get($marketplaceSlug, 'default_vat_rate', '20');
+        return (int) $defaultVatRate;
     }
 }
 

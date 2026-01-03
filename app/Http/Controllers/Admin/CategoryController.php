@@ -358,5 +358,28 @@ class CategoryController extends Controller
 
         return (string) $categoryId;
     }
+
+    /**
+     * Update category commission or VAT rate
+     */
+    public function updateRate(Request $request, Category $category)
+    {
+        $validated = $request->validate([
+            'field' => 'required|in:commission_rate,vat_rate',
+            'value' => 'nullable|numeric',
+        ]);
+
+        $field = $validated['field'];
+        $value = $validated['value'] !== null && $validated['value'] !== '' 
+            ? ($field === 'commission_rate' ? (float) $validated['value'] : (int) $validated['value'])
+            : null;
+
+        $category->update([$field => $value]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Kategori oranı başarıyla güncellendi.',
+        ]);
+    }
 }
 

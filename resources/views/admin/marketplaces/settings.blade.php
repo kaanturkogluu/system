@@ -216,6 +216,48 @@
                         Pazaryerine gönderilecek ürün barkodlarına eklenecek ön ek (örn: GNS). Örnek: "4719072749927" → "GNS4719072749927"
                     </p>
                 </div>
+
+                <!-- Default Commission Rate -->
+                <div>
+                    <label for="settings_default_commission_rate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Genel Komisyon Oranı (%)
+                    </label>
+                    <input 
+                        type="number" 
+                        id="settings_default_commission_rate" 
+                        name="settings[default_commission_rate]" 
+                        value="{{ old('settings.default_commission_rate', $settings['default_commission_rate'] ?? '20') }}"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        placeholder="20"
+                    >
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        Ürüne özel veya kategori bazlı komisyon girilmemişse kullanılacak genel komisyon oranı (varsayılan: 20%)
+                    </p>
+                </div>
+
+                <!-- Default VAT Rate -->
+                <div>
+                    <label for="settings_default_vat_rate" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        KDV Oranı (%)
+                    </label>
+                    <input 
+                        type="number" 
+                        id="settings_default_vat_rate" 
+                        name="settings[default_vat_rate]" 
+                        value="{{ old('settings.default_vat_rate', $settings['default_vat_rate'] ?? '20') }}"
+                        min="0"
+                        max="100"
+                        step="1"
+                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        placeholder="20"
+                    >
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        Ürünler için kullanılacak KDV oranı (varsayılan: 20%)
+                    </p>
+                </div>
             </div>
 
             <!-- Info Box -->

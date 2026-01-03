@@ -166,6 +166,68 @@
             </dl>
         </div>
 
+        <!-- Commission & VAT Rates -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                </svg>
+                Komisyon & KDV Oranları
+            </h3>
+            <dl class="space-y-4">
+                <div>
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Komisyon Oranı (%):</dt>
+                    <dd>
+                        <input 
+                            type="number" 
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            value="{{ $product->commission_rate ?? '' }}"
+                            data-product-id="{{ $product->id }}"
+                            data-field="commission_rate"
+                            class="product-rate-input w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Ürüne özel komisyon (boş bırakılırsa kategori/genel kullanılır)"
+                        >
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            @if($product->commission_rate)
+                                Ürüne özel: {{ number_format($product->commission_rate, 2) }}%
+                            @elseif($product->category && $product->category->commission_rate)
+                                Kategori bazlı: {{ number_format($product->category->commission_rate, 2) }}%
+                            @else
+                                Genel: 20%
+                            @endif
+                        </p>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">KDV Oranı (%):</dt>
+                    <dd>
+                        <input 
+                            type="number" 
+                            step="1"
+                            min="0"
+                            max="100"
+                            value="{{ $product->vat_rate ?? '' }}"
+                            data-product-id="{{ $product->id }}"
+                            data-field="vat_rate"
+                            class="product-rate-input w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+                            placeholder="Ürüne özel KDV (boş bırakılırsa kategori/genel kullanılır)"
+                        >
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            @if($product->vat_rate)
+                                Ürüne özel: {{ $product->vat_rate }}%
+                            @elseif($product->category && $product->category->vat_rate)
+                                Kategori bazlı: {{ $product->category->vat_rate }}%
+                            @else
+                                Genel: 20%
+                            @endif
+                        </p>
+                    </dd>
+                </div>
+            </dl>
+        </div>
+
         <!-- Pricing & Dates -->
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
@@ -324,5 +386,53 @@
     </div>
     @endif
 </div>
+
+@push('scripts')
+<script>
+// Product rate update handler
+document.addEventListener('DOMContentLoaded', function() {
+    const rateInputs = document.querySelectorAll('.product-rate-input');
+    
+    rateInputs.forEach(input => {
+        input.addEventListener('blur', function() {
+            const productId = this.dataset.productId;
+            const field = this.dataset.field;
+            const value = this.value;
+            
+            // Update via AJAX
+            fetch(`/admin/products/${productId}/update-rate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({
+                    field: field,
+                    value: value || null
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Visual feedback
+                    this.classList.add('bg-green-50', 'dark:bg-green-900/20');
+                    setTimeout(() => {
+                        this.classList.remove('bg-green-50', 'dark:bg-green-900/20');
+                        // Reload page to show updated info
+                        location.reload();
+                    }, 1000);
+                } else {
+                    alert('Güncelleme başarısız: ' + (data.message || 'Bilinmeyen hata'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Bir hata oluştu. Lütfen tekrar deneyin.');
+            });
+        });
+    });
+});
+</script>
+@endpush
 @endsection
 

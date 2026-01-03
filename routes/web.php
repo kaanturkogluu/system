@@ -27,6 +27,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/categories/download-trendyol', [\App\Http\Controllers\Admin\CategoryController::class, 'downloadTrendyolCategories'])->name('categories.download-trendyol');
         Route::get('/categories/get-main-categories', [\App\Http\Controllers\Admin\CategoryController::class, 'getMainCategories'])->name('categories.get-main-categories');
         Route::post('/categories/import', [\App\Http\Controllers\Admin\CategoryController::class, 'importCategories'])->name('categories.import');
+        Route::post('/categories/{category}/update-rate', [\App\Http\Controllers\Admin\CategoryController::class, 'updateRate'])->name('categories.update-rate');
         
         // Attributes
         Route::resource('attributes', \App\Http\Controllers\Admin\AttributeController::class);
@@ -85,6 +86,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // XML Products
         Route::get('/xml-products', [\App\Http\Controllers\Admin\XmlProductController::class, 'index'])->name('xml-products.index');
         Route::get('/xml-products/{id}', [\App\Http\Controllers\Admin\XmlProductController::class, 'show'])->name('xml-products.show');
+        Route::post('/products/{product}/update-rate', [\App\Http\Controllers\Admin\XmlProductController::class, 'updateRate'])->name('products.update-rate');
         
         // Ready Products (Gönderilmeye Hazır Ürünler)
         Route::get('/ready-products', [\App\Http\Controllers\Admin\ReadyProductController::class, 'index'])->name('ready-products.index');

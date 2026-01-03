@@ -19,6 +19,8 @@ class Product extends Model
         'title',
         'description',
         'desi',
+        'commission_rate',
+        'vat_rate',
         'brand_id',
         'category_id',
         'product_type',
@@ -35,6 +37,8 @@ class Product extends Model
         'currency_id' => 'integer',
         'reference_price' => 'decimal:2',
         'desi' => 'decimal:2',
+        'commission_rate' => 'decimal:2',
+        'vat_rate' => 'integer',
         'raw_xml' => 'array',
     ];
 

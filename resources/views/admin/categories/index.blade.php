@@ -143,6 +143,12 @@
                             Durum
                         </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                            Komisyon Oranı (%)
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                            KDV Oranı (%)
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             İşlemler
                         </th>
                     </tr>
@@ -198,6 +204,32 @@
                                     </span>
                                 @endif
                             </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <input 
+                                    type="number" 
+                                    step="0.01"
+                                    min="0"
+                                    max="100"
+                                    value="{{ $category->commission_rate ?? '' }}"
+                                    data-category-id="{{ $category->id }}"
+                                    data-field="commission_rate"
+                                    class="category-rate-input w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                    placeholder="20"
+                                >
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <input 
+                                    type="number" 
+                                    step="1"
+                                    min="0"
+                                    max="100"
+                                    value="{{ $category->vat_rate ?? '' }}"
+                                    data-category-id="{{ $category->id }}"
+                                    data-field="vat_rate"
+                                    class="category-rate-input w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                    placeholder="20"
+                                >
+                            </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <a href="{{ route('admin.categories.index', ['parent_id' => $category->id]) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-3">
                                     Alt Kategoriler
@@ -206,7 +238,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                            <td colspan="9" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
                                 Kategori bulunamadı.
                             </td>
                         </tr>
@@ -246,6 +278,52 @@
 
 @push('scripts')
 <script>
+// Category rate update handler
+document.addEventListener('DOMContentLoaded', function() {
+    const rateInputs = document.querySelectorAll('.category-rate-input');
+    
+    rateInputs.forEach(input => {
+        let timeout;
+        
+        input.addEventListener('blur', function() {
+            clearTimeout(timeout);
+            
+            const categoryId = this.dataset.categoryId;
+            const field = this.dataset.field;
+            const value = this.value;
+            
+            // Update via AJAX
+            fetch(`/admin/categories/${categoryId}/update-rate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({
+                    field: field,
+                    value: value || null
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Visual feedback
+                    this.classList.add('bg-green-50', 'dark:bg-green-900/20');
+                    setTimeout(() => {
+                        this.classList.remove('bg-green-50', 'dark:bg-green-900/20');
+                    }, 1000);
+                } else {
+                    alert('Güncelleme başarısız: ' + (data.message || 'Bilinmeyen hata'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Bir hata oluştu. Lütfen tekrar deneyin.');
+            });
+        });
+    });
+});
+
 (function() {
     'use strict';
     

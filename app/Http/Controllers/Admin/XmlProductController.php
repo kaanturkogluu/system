@@ -53,5 +53,28 @@ class XmlProductController extends Controller
         
         return view('admin.xml-products.show', compact('product', 'importItem'));
     }
+
+    /**
+     * Update product commission or VAT rate
+     */
+    public function updateRate(Request $request, Product $product)
+    {
+        $validated = $request->validate([
+            'field' => 'required|in:commission_rate,vat_rate',
+            'value' => 'nullable|numeric',
+        ]);
+
+        $field = $validated['field'];
+        $value = $validated['value'] !== null && $validated['value'] !== '' 
+            ? ($field === 'commission_rate' ? (float) $validated['value'] : (int) $validated['value'])
+            : null;
+
+        $product->update([$field => $value]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ürün oranı başarıyla güncellendi.',
+        ]);
+    }
 }
 

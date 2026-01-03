@@ -20,6 +20,8 @@ class Category extends Model
         'sort_order',
         'is_leaf',
         'is_active',
+        'commission_rate',
+        'vat_rate',
     ];
 
     protected $casts = [
@@ -28,6 +30,8 @@ class Category extends Model
         'is_leaf' => 'boolean',
         'is_active' => 'boolean',
         'parent_id' => 'integer',
+        'commission_rate' => 'decimal:2',
+        'vat_rate' => 'integer',
     ];
 
     /**
