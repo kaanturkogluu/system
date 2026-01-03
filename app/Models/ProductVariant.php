@@ -17,6 +17,10 @@ class ProductVariant extends Model
         'barcode',
         'price',
         'currency',
+        'price_sk',
+        'price_bayi',
+        'price_ozel',
+        'currency_id',
         'stock',
         'attributes',
     ];
@@ -24,6 +28,10 @@ class ProductVariant extends Model
     protected $casts = [
         'product_id' => 'integer',
         'price' => 'decimal:2',
+        'price_sk' => 'decimal:6',
+        'price_bayi' => 'decimal:6',
+        'price_ozel' => 'decimal:6',
+        'currency_id' => 'integer',
         'stock' => 'integer',
         'attributes' => 'array',
     ];
@@ -34,6 +42,14 @@ class ProductVariant extends Model
     public function product()
     {
         return $this->belongsTo(Product::class, 'product_id');
+    }
+
+    /**
+     * Currency ilişkisi
+     */
+    public function currencyRelation()
+    {
+        return $this->belongsTo(Currency::class, 'currency_id');
     }
 }
 

@@ -21,6 +21,7 @@ class Product extends Model
         'desi',
         'commission_rate',
         'vat_rate',
+        'profit_rate',
         'brand_id',
         'category_id',
         'product_type',
@@ -39,6 +40,7 @@ class Product extends Model
         'desi' => 'decimal:2',
         'commission_rate' => 'decimal:2',
         'vat_rate' => 'integer',
+        'profit_rate' => 'decimal:2',
         'raw_xml' => 'array',
     ];
 

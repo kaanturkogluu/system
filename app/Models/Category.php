@@ -22,6 +22,7 @@ class Category extends Model
         'is_active',
         'commission_rate',
         'vat_rate',
+        'profit_rate',
     ];
 
     protected $casts = [
@@ -32,6 +33,7 @@ class Category extends Model
         'parent_id' => 'integer',
         'commission_rate' => 'decimal:2',
         'vat_rate' => 'integer',
+        'profit_rate' => 'decimal:2',
     ];
 
     /**

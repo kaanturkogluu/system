@@ -226,15 +226,15 @@
                         type="number" 
                         id="settings_default_commission_rate" 
                         name="settings[default_commission_rate]" 
-                        value="{{ old('settings.default_commission_rate', $settings['default_commission_rate'] ?? '20') }}"
+                        value="{{ old('settings.default_commission_rate', $settings['default_commission_rate'] ?? '15') }}"
                         min="0"
                         max="100"
                         step="0.01"
                         class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                        placeholder="20"
+                        placeholder="15"
                     >
                     <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        Ürüne özel veya kategori bazlı komisyon girilmemişse kullanılacak genel komisyon oranı (varsayılan: 20%)
+                        Ürüne özel veya kategori bazlı komisyon girilmemişse kullanılacak genel komisyon oranı (varsayılan: 15%)
                     </p>
                 </div>
 

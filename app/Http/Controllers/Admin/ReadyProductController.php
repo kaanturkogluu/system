@@ -12,6 +12,7 @@ use App\Models\Marketplace;
 use App\Models\MarketplaceShippingCompanyMapping;
 use App\Helpers\MarketplaceConfig;
 use App\Services\ProductAttributePersistenceService;
+use App\Services\ProductPriceCalculationService;
 use Illuminate\Http\Request;
 
 class ReadyProductController extends Controller
@@ -47,6 +48,7 @@ class ReadyProductController extends Controller
             return [
                 'product' => $product,
                 'api_data' => $this->prepareApiData($product),
+                'price_details' => $this->getPriceCalculationDetails($product, 'trendyol'),
             ];
         });
 
@@ -181,21 +183,20 @@ class ReadyProductController extends Controller
         $data = [
             'barcode' => $this->getBarcodeWithPrefix($product),
             'title' => $product->title ?: 'Sistemde Veri yok',
-            'productMainId' => $product->id,
+            'productMainId' =>(string) $product->id,
             'brandId' => $product->brand_id ?: 'Sistemde Veri yok',
             'categoryId' => $product->category_id ?: 'Sistemde Veri yok',
             'quantity' => $this->getTotalStock($product),
-            'stockCode' => 'Sistemde Veri yok',
-            'dimensionalWeight' => $product->desi ?? 'Sistemde Veri yok',
+            'stockCode' => $product->sku ?: 'Sistemde Veri yok',
+            'dimensionalWeight' => (int)$product->desi ?? 'Sistemde Veri yok',
             'description' => $product->description ?: 'Sistemde Veri yok',
             'currencyType' => $product->currency ?: 'TRY',
-            'listPrice' => $product->reference_price ?: 'Sistemde Veri yok',
-            'salePrice' => $this->getSalePrice($product),
+            'listPrice' => $this->getSalePrice($product, 'trendyol'),
+            'salePrice' => $this->getSalePrice($product, 'trendyol'),
             'vatRate' => $this->getVatRate($product),
-            'commissionRate' => $this->getCommissionRate($product),
             'cargoCompanyId' => $this->getCargoCompanyId($product),
-            'lotNumber' => 'Sistemde Veri yok',
-            'specialConsumptionTax' => 'Sistemde Veri yok',
+            
+           
             'deliveryDuration' => 1,
             'images' => $this->prepareImages($product),
             'attributes' => $this->prepareAttributes($product),
@@ -218,14 +219,61 @@ class ReadyProductController extends Controller
 
     /**
      * Satış fiyatını al
+     * Fiyat hesaplama servisi kullanılarak güncel fiyat hesaplanır
      */
-    private function getSalePrice(Product $product): string|float
+    private function getSalePrice(Product $product, ?string $marketplaceSlug = 'trendyol'): string|float
     {
+        // Product'ı category ve variants ile yükle (fiyat hesaplama için gerekli)
+        $product->load('category', 'variants.currencyRelation');
+        
+        // Base price'ı al (Fiyat_Ozel'den TRY'ye çevrilmiş)
+        $basePrice = 0;
         if ($product->variants && $product->variants->count() > 0) {
             $firstVariant = $product->variants->first();
-            return $firstVariant->price ?: 'Sistemde Veri yok';
+            // price_ozel'den base price'ı hesapla
+            if ($firstVariant->price_ozel !== null && $firstVariant->price_ozel > 0) {
+                // Currency bilgisini al
+                $currencyCode = $firstVariant->currency ?? 'TRY';
+                $currency = $firstVariant->currencyRelation;
+                
+                if ($currencyCode === 'TRY') {
+                    $basePrice = (float) $firstVariant->price_ozel;
+                } else {
+                    // Döviz cinsinden, TRY'ye çevir
+                    if ($currency && $currency->rate_to_try > 0) {
+                        $basePrice = (float) $firstVariant->price_ozel * $currency->rate_to_try;
+                    } else {
+                        // Kur yoksa, mevcut price'ı kullan (zaten hesaplanmış olabilir)
+                        $basePrice = (float) $firstVariant->price;
+                    }
+                }
+            } else {
+                // price_ozel yoksa, mevcut price'ı kullan
+                $basePrice = (float) $firstVariant->price;
+            }
+        } else {
+            // Variant yoksa reference_price kullan
+            $basePrice = (float) ($product->reference_price ?? 0);
         }
-        return $product->reference_price ?: 'Sistemde Veri yok';
+        
+        // Base price 0 ise hata döndür
+        if ($basePrice <= 0) {
+            return 'Sistemde Veri yok';
+        }
+        
+        // Fiyat hesaplama servisini kullan
+        try {
+            $priceCalculationService = new ProductPriceCalculationService();
+            $finalPrice = $priceCalculationService->calculatePrice($product, $basePrice, $marketplaceSlug);
+            return $finalPrice;
+        } catch (\Exception $e) {
+            // Hata durumunda mevcut price'ı döndür
+            if ($product->variants && $product->variants->count() > 0) {
+                $firstVariant = $product->variants->first();
+                return $firstVariant->price ?: 'Sistemde Veri yok';
+            }
+            return $product->reference_price ?: 'Sistemde Veri yok';
+        }
     }
 
     /**
@@ -516,26 +564,6 @@ class ReadyProductController extends Controller
         return $str;
     }
 
-    /**
-     * Komisyon oranını hesapla
-     * Öncelik sırası: 1) Ürüne özel, 2) Kategori bazlı, 3) Genel (default 20)
-     */
-    private function getCommissionRate(Product $product, string $marketplaceSlug = 'trendyol'): float
-    {
-        // 1. Ürüne özel komisyon
-        if ($product->commission_rate !== null) {
-            return (float) $product->commission_rate;
-        }
-
-        // 2. Kategori bazlı komisyon
-        if ($product->category && $product->category->commission_rate !== null) {
-            return (float) $product->category->commission_rate;
-        }
-
-        // 3. Genel komisyon (marketplace settings'den, default 20)
-        $defaultCommission = MarketplaceConfig::get($marketplaceSlug, 'default_commission_rate', '20');
-        return (float) $defaultCommission;
-    }
 
     /**
      * KDV oranını hesapla
@@ -556,6 +584,109 @@ class ReadyProductController extends Controller
         // 3. Genel KDV (marketplace settings'den, default 20)
         $defaultVatRate = MarketplaceConfig::get($marketplaceSlug, 'default_vat_rate', '20');
         return (int) $defaultVatRate;
+    }
+
+    /**
+     * Fiyat hesaplama detaylarını al
+     */
+    private function getPriceCalculationDetails(Product $product, ?string $marketplaceSlug = 'trendyol'): ?array
+    {
+        // Product'ı category ve variants ile yükle
+        $product->load('category', 'variants.currencyRelation');
+        
+        // Base price'ı al (Fiyat_Ozel'den TRY'ye çevrilmiş)
+        $basePrice = 0;
+        if ($product->variants && $product->variants->count() > 0) {
+            $firstVariant = $product->variants->first();
+            // price_ozel'den base price'ı hesapla
+            if ($firstVariant->price_ozel !== null && $firstVariant->price_ozel > 0) {
+                // Currency bilgisini al
+                $currencyCode = $firstVariant->currency ?? 'TRY';
+                $currency = $firstVariant->currencyRelation;
+                
+                if ($currencyCode === 'TRY') {
+                    $basePrice = (float) $firstVariant->price_ozel;
+                } else {
+                    // Döviz cinsinden, TRY'ye çevir
+                    if ($currency && $currency->rate_to_try > 0) {
+                        $basePrice = (float) $firstVariant->price_ozel * $currency->rate_to_try;
+                    } else {
+                        // Kur yoksa, mevcut price'ı kullan
+                        $basePrice = (float) $firstVariant->price;
+                    }
+                }
+            } else {
+                // price_ozel yoksa, mevcut price'ı kullan
+                $basePrice = (float) $firstVariant->price;
+            }
+        } else {
+            // Variant yoksa reference_price kullan
+            $basePrice = (float) ($product->reference_price ?? 0);
+        }
+        
+        // Base price 0 ise null döndür
+        if ($basePrice <= 0) {
+            return null;
+        }
+        
+        // Fiyat hesaplama servisini kullan
+        try {
+            $priceCalculationService = new ProductPriceCalculationService();
+            $details = $priceCalculationService->calculatePriceWithDetails($product, $basePrice, $marketplaceSlug);
+            
+            // Oran kaynaklarını ekle
+            $details['vat_rate_source'] = $this->getVatRateSource($product);
+            $details['marketplace_category_commission_source'] = $this->getMarketplaceCategoryCommissionSource($product, $marketplaceSlug);
+            
+            return $details;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+
+    /**
+     * KDV oranı kaynağını al
+     */
+    private function getVatRateSource(Product $product): string
+    {
+        if ($product->vat_rate !== null) {
+            return 'Ürüne Özel';
+        }
+        if ($product->category && $product->category->vat_rate !== null) {
+            return 'Kategori Bazlı';
+        }
+        return 'Genel';
+    }
+
+    /**
+     * Komisyon oranı kaynağını al
+     */
+
+    /**
+     * Pazaryeri kategori komisyon kaynağını al
+     */
+    private function getMarketplaceCategoryCommissionSource(Product $product, ?string $marketplaceSlug = null): string
+    {
+        if (!$marketplaceSlug || !$product->category_id) {
+            return 'Uygulanmadı';
+        }
+        
+        $marketplace = Marketplace::where('slug', $marketplaceSlug)->first();
+        if (!$marketplace) {
+            return 'Uygulanmadı';
+        }
+        
+        $marketplaceCategory = \App\Models\MarketplaceCategory::where('marketplace_id', $marketplace->id)
+            ->where('global_category_id', $product->category_id)
+            ->where('is_mapped', true)
+            ->first();
+        
+        if ($marketplaceCategory && $marketplaceCategory->commission_rate !== null) {
+            return 'Pazaryeri Kategori';
+        }
+        
+        return 'Uygulanmadı';
     }
 }
 

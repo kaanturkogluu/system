@@ -17,6 +17,65 @@
         </div>
     @endif
 
+    <!-- Eşleştirilmiş Kategoriler ve Komisyon Oranları -->
+    @if(isset($mappingDetails) && count($mappingDetails) > 0)
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+        <h2 class="text-xl font-bold mb-4">Eşleştirilmiş Kategoriler ve Komisyon Oranları</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Trendyol Kategori</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sistem Kategori</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Komisyon Oranı (%)</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">İşlem</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    @php
+                        $trendyolMarketplace = \App\Models\Marketplace::where('slug', 'trendyol')->first();
+                        $mappedCategories = \App\Models\MarketplaceCategory::where('marketplace_id', $trendyolMarketplace->id)
+                            ->whereNotNull('global_category_id')
+                            ->where('is_mapped', true)
+                            ->with('globalCategory')
+                            ->get();
+                    @endphp
+                    @foreach($mappedCategories as $mapping)
+                    <tr>
+                        <td class="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                            {{ $mapping->name }} (ID: {{ $mapping->marketplace_category_id }})
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                            {{ $mapping->globalCategory ? $mapping->globalCategory->name : 'N/A' }} (ID: {{ $mapping->global_category_id }})
+                        </td>
+                        <td class="px-4 py-3 text-sm">
+                            <input 
+                                type="number" 
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                value="{{ $mapping->commission_rate ?? '' }}"
+                                data-mapping-id="{{ $mapping->id }}"
+                                class="marketplace-commission-input w-24 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                placeholder="0.00"
+                            >
+                        </td>
+                        <td class="px-4 py-3 text-sm">
+                            <button 
+                                onclick="updateCommissionRate({{ $mapping->id }})"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition"
+                            >
+                                Kaydet
+                            </button>
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Sol: Sistem Kategorileri -->
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -130,6 +189,19 @@
                 <div id="selected-system" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded"></div>
                 <p class="text-xs text-gray-500 mt-1">Yukarıdan bir sistem kategorisi seçin</p>
             </div>
+            <div>
+                <label class="block text-sm font-medium mb-2">Pazaryeri Kategori Komisyon Oranı (%)</label>
+                <input 
+                    type="number" 
+                    id="commission-rate-input"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="Örn: 5.00"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+                >
+                <p class="text-xs text-gray-500 mt-1">Boş bırakılırsa komisyon eklenmez</p>
+            </div>
             <div class="flex gap-3">
                 <button onclick="saveMapping()" id="save-mapping-btn" disabled class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">Eşleştir</button>
                 <button onclick="closeMappingModal()" class="flex-1 bg-gray-200 dark:bg-gray-700 px-4 py-2 rounded-lg">İptal</button>
@@ -220,6 +292,19 @@ function mapCategory(trendyolId, trendyolName) {
     document.getElementById('selected-system').textContent = selectedSystemCategoryName ? selectedSystemCategoryName + ' (ID: ' + selectedSystemCategoryId + ')' : 'Seçilmedi';
     document.getElementById('save-mapping-btn').disabled = !selectedSystemCategoryId;
     
+    // Mevcut komisyon oranını yükle (eğer eşleştirme varsa)
+    @if(isset($mappingDetails))
+        const mappingDetails = @json($mappingDetails);
+        const existingMapping = mappingDetails[trendyolId];
+        if (existingMapping && existingMapping.commission_rate !== null) {
+            document.getElementById('commission-rate-input').value = existingMapping.commission_rate;
+        } else {
+            document.getElementById('commission-rate-input').value = '';
+        }
+    @else
+        document.getElementById('commission-rate-input').value = '';
+    @endif
+    
     document.getElementById('mapping-modal').classList.remove('hidden');
 }
 
@@ -236,6 +321,8 @@ function saveMapping() {
         return;
     }
 
+    const commissionRate = document.getElementById('commission-rate-input').value;
+
     fetch('{{ route("admin.marketplace-category-mappings.update") }}', {
         method: 'POST',
         headers: {
@@ -244,7 +331,8 @@ function saveMapping() {
         },
         body: JSON.stringify({
             trendyol_category_id: selectedTrendyolCategoryId,
-            global_category_id: selectedSystemCategoryId
+            global_category_id: selectedSystemCategoryId,
+            commission_rate: commissionRate || null
         })
     })
     .then(response => response.json())
@@ -253,6 +341,34 @@ function saveMapping() {
             location.reload();
         } else {
             alert('Hata: ' + (data.message || 'Eşleştirme yapılamadı'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Bir hata oluştu');
+    });
+}
+
+function updateCommissionRate(mappingId) {
+    const input = document.querySelector(`input[data-mapping-id="${mappingId}"]`);
+    const commissionRate = input.value;
+    
+    fetch(`/admin/marketplace-category-mappings/${mappingId}/update-commission-rate`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({
+            commission_rate: commissionRate || null
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Komisyon oranı başarıyla güncellendi.');
+        } else {
+            alert('Hata: ' + (data.message || 'Komisyon oranı güncellenemedi'));
         }
     })
     .catch(error => {

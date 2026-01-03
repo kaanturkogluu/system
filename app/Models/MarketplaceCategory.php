@@ -20,6 +20,7 @@ class MarketplaceCategory extends Model
         'path',
         'global_category_id',
         'is_mapped',
+        'commission_rate',
     ];
 
     protected $casts = [
@@ -29,6 +30,7 @@ class MarketplaceCategory extends Model
         'level' => 'integer',
         'global_category_id' => 'integer',
         'is_mapped' => 'boolean',
+        'commission_rate' => 'decimal:2',
     ];
 
     /**

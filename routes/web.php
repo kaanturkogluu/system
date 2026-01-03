@@ -47,6 +47,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::post('/bulk-update', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'bulkUpdate'])->name('bulk-update');
             Route::get('/categories', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'getCategories'])->name('categories');
             Route::post('/import-attributes', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'importAttributes'])->name('import-attributes');
+            Route::post('/{marketplaceCategory}/update-commission-rate', [\App\Http\Controllers\Admin\MarketplaceCategoryMappingController::class, 'updateCommissionRate'])->name('update-commission-rate');
         });
         
         // Marketplaces

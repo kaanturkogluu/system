@@ -6,11 +6,13 @@ use App\Helpers\BrandNormalizer;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\CategoryMapping;
+use App\Models\Currency;
 use App\Models\ImportItem;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductVariant;
 use App\Services\ProductAttributePersistenceService;
+use App\Services\ProductPriceCalculationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -128,9 +130,70 @@ class ImportItemJob implements ShouldQueue
                     ?? $this->getNestedValue($payload, ['raw_path'])
                     ?? $payload['raw_path'] ?? null;
                 
-                $price = $this->getNestedValue($payload, ['pricing', 'price'])
-                    ?? $payload['Fiyat_SK'] ?? $payload['Fiyat_Bayi'] ?? $payload['Fiyat'] 
-                    ?? $payload['Price'] ?? null;
+                // Fiyat bilgilerini al (XML'den)
+                $priceSk = $this->getNestedValue($payload, ['pricing', 'price_sk'])
+                    ?? $payload['Fiyat_SK'] ?? null;
+                $priceBayi = $this->getNestedValue($payload, ['pricing', 'price_bayi'])
+                    ?? $payload['Fiyat_Bayi'] ?? null;
+                $priceOzel = $this->getNestedValue($payload, ['pricing', 'price_ozel'])
+                    ?? $payload['Fiyat_Ozel'] ?? null;
+                
+                // Döviz tipini al (XML'den - TL veya USD)
+                $currencyCode = $this->getNestedValue($payload, ['pricing', 'currency'])
+                    ?? $payload['Doviz'] ?? $payload['Currency'] ?? $payload['ParaBirimi'] 
+                    ?? $payload['Döviz'] ?? 'TRY'; // Varsayılan TRY
+                
+                // Currency kodunu normalize et (TL -> TRY, USD -> USD)
+                $currencyCode = strtoupper(trim($currencyCode));
+                if ($currencyCode === 'TL') {
+                    $currencyCode = 'TRY';
+                }
+                
+                // Currency'yi bul veya varsayılan olarak TRY kullan
+                $currency = Currency::where('code', $currencyCode)->first();
+                if (!$currency) {
+                    // Currency bulunamazsa TRY'yi kullan
+                    $currency = Currency::where('code', 'TRY')->first();
+                    if (!$currency) {
+                        Log::channel('imports')->warning('Currency not found, using TRY as default', [
+                            'import_item_id' => $this->importItemId,
+                            'requested_currency' => $currencyCode,
+                        ]);
+                        $currencyCode = 'TRY';
+                    }
+                }
+                
+                $currencyId = $currency ? $currency->id : null;
+                
+                // Fiyat_Ozel'i kullanarak TRY'ye çevrilmiş satış fiyatını hesapla
+                // price sütunu SADECE fiyat_ozel verisi kullanılarak doldurulacak
+                $priceInTry = 0;
+                if ($priceOzel !== null && $priceOzel !== '' && is_numeric($priceOzel)) {
+                    $priceOzelValue = (float) $priceOzel;
+                    
+                    if ($currencyCode === 'TRY') {
+                        // Zaten TRY, direkt kullan
+                        $priceInTry = $priceOzelValue;
+                    } else {
+                        // Döviz cinsinden, TRY'ye çevir
+                        if ($currency && $currency->rate_to_try > 0) {
+                            $priceInTry = $priceOzelValue * $currency->rate_to_try;
+                        } else {
+                            Log::channel('imports')->warning('Currency rate not available, cannot convert price', [
+                                'import_item_id' => $this->importItemId,
+                                'currency_code' => $currencyCode,
+                                'price_ozel' => $priceOzelValue,
+                            ]);
+                            $priceInTry = 0; // Kur yoksa 0 olarak bırak
+                        }
+                    }
+                } else {
+                    // Fiyat_Ozel yoksa, price 0 olarak kalacak
+                    Log::channel('imports')->warning('Fiyat_Ozel bulunamadı, price sütunu 0 olarak ayarlanacak', [
+                        'import_item_id' => $this->importItemId,
+                        'product_sku' => $sku,
+                    ]);
+                }
                 
                 $stock = $this->getNestedValue($payload, ['stock'])
                     ?? $payload['Miktar'] ?? $payload['Stock'] ?? $payload['Stok'] ?? null;
@@ -234,8 +297,23 @@ class ImportItemJob implements ShouldQueue
 
                 // 6) Product variant oluştur (tek varyant)
                 $variantSku = $sku;
-                $variantPrice = $price ? (float) $price : 0;
                 $variantStock = $stock ? (int) $stock : 0;
+                
+                // Fiyat değerlerini normalize et
+                $priceSkValue = ($priceSk !== null && $priceSk !== '' && is_numeric($priceSk)) ? (float) $priceSk : null;
+                $priceBayiValue = ($priceBayi !== null && $priceBayi !== '' && is_numeric($priceBayi)) ? (float) $priceBayi : null;
+                $priceOzelValue = ($priceOzel !== null && $priceOzel !== '' && is_numeric($priceOzel)) ? (float) $priceOzel : null;
+
+                // Final fiyatı hesapla (KDV + Komisyon + Kargo + Pazaryeri komisyonu)
+                // Product'ı yeniden yükle (category ilişkisi için)
+                $product->load('category');
+                
+                $finalPrice = $priceInTry;
+                if ($priceInTry > 0) {
+                    $priceCalculationService = new ProductPriceCalculationService();
+                    // Pazaryeri slug'ı şu an için null (ileride pazaryeri belirtilirse kullanılabilir)
+                    $finalPrice = $priceCalculationService->calculatePrice($product, $priceInTry, null);
+                }
 
                 ProductVariant::updateOrCreate(
                     [
@@ -244,8 +322,12 @@ class ImportItemJob implements ShouldQueue
                     ],
                     [
                         'barcode' => $barcode,
-                        'price' => $variantPrice,
-                        'currency' => 'TRY',
+                        'price' => round($finalPrice, 2), // Hesaplanan final fiyat (Fiyat_Ozel + KDV + Komisyon + Kargo + Pazaryeri komisyonu)
+                        'currency' => $currencyCode, // Orijinal döviz kodu
+                        'price_sk' => $priceSkValue, // Fiyat Satış Kuru (orijinal döviz)
+                        'price_bayi' => $priceBayiValue, // Fiyat Bayi (orijinal döviz)
+                        'price_ozel' => $priceOzelValue, // Fiyat Özel (orijinal döviz)
+                        'currency_id' => $currencyId, // Currency ID
                         'stock' => $variantStock,
                         'attributes' => $attributes ?: null,
                     ]

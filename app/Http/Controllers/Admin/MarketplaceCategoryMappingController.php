@@ -21,18 +21,26 @@ class MarketplaceCategoryMappingController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Get existing mappings
+        // Get existing mappings with commission rates
         $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
         $existingMappings = [];
+        $mappingDetails = [];
         
         if ($trendyolMarketplace) {
             $mappings = MarketplaceCategory::where('marketplace_id', $trendyolMarketplace->id)
                 ->whereNotNull('global_category_id')
+                ->with('globalCategory')
                 ->get()
                 ->keyBy('marketplace_category_id');
             
             foreach ($mappings as $mapping) {
                 $existingMappings[$mapping->marketplace_category_id] = $mapping->global_category_id;
+                $mappingDetails[$mapping->marketplace_category_id] = [
+                    'id' => $mapping->id,
+                    'global_category_id' => $mapping->global_category_id,
+                    'commission_rate' => $mapping->commission_rate,
+                    'category_name' => $mapping->globalCategory ? $mapping->globalCategory->name : null,
+                ];
             }
         }
 
@@ -40,6 +48,7 @@ class MarketplaceCategoryMappingController extends Controller
             'trendyolCategories',
             'systemCategories',
             'existingMappings',
+            'mappingDetails',
             'trendyolMarketplace'
         ));
     }
@@ -66,6 +75,7 @@ class MarketplaceCategoryMappingController extends Controller
         $validated = $request->validate([
             'trendyol_category_id' => 'required|integer',
             'global_category_id' => 'nullable|exists:categories,id',
+            'commission_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
@@ -93,9 +103,38 @@ class MarketplaceCategoryMappingController extends Controller
 
         $marketplaceCategory->global_category_id = $validated['global_category_id'];
         $marketplaceCategory->is_mapped = !empty($validated['global_category_id']);
+        
+        // Komisyon oranını güncelle
+        if (isset($validated['commission_rate'])) {
+            $marketplaceCategory->commission_rate = $validated['commission_rate'] !== null && $validated['commission_rate'] !== '' 
+                ? (float) $validated['commission_rate'] 
+                : null;
+        }
+        
         $marketplaceCategory->save();
 
-        return response()->json(['success' => true, 'message' => 'Eşleştirme güncellendi.']);
+        return response()->json(['success' => true, 'message' => 'Eşleştirme ve komisyon oranı güncellendi.']);
+    }
+
+    /**
+     * Update marketplace category commission rate
+     */
+    public function updateCommissionRate(Request $request, MarketplaceCategory $marketplaceCategory)
+    {
+        $validated = $request->validate([
+            'commission_rate' => 'nullable|numeric|min:0|max:100',
+        ]);
+
+        $commissionRate = $validated['commission_rate'] !== null && $validated['commission_rate'] !== '' 
+            ? (float) $validated['commission_rate'] 
+            : null;
+
+        $marketplaceCategory->update(['commission_rate' => $commissionRate]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pazaryeri kategori komisyon oranı başarıyla güncellendi.',
+        ]);
     }
 
     private function findCategoryById(array $categories, int $id): ?array

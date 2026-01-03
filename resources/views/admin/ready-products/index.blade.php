@@ -85,6 +85,7 @@
         @php
             $product = $item['product'];
             $apiData = $item['api_data'];
+            $priceDetails = $item['price_details'] ?? null;
         @endphp
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             <!-- Product Header -->
@@ -130,7 +131,20 @@
             <!-- API Data -->
             <div class="p-4" x-data="{ showJson: false }">
                 <div class="flex items-center justify-between mb-3">
-                    <h4 class="text-sm font-semibold text-gray-900 dark:text-white">API Formatı</h4>
+                    <div class="flex items-center space-x-3">
+                        <h4 class="text-sm font-semibold text-gray-900 dark:text-white">API Formatı</h4>
+                        @if($priceDetails)
+                        <button 
+                            onclick="showPriceDetailsModal({{ $product->id }})"
+                            class="text-xs px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg transition duration-200 flex items-center space-x-1"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                            </svg>
+                            <span>Fiyat Detay</span>
+                        </button>
+                        @endif
+                    </div>
                     <button 
                         @click="showJson = !showJson"
                         class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
@@ -143,7 +157,12 @@
                 <!-- Collapsible JSON -->
                 <div x-show="showJson" x-cloak class="mt-3">
                     <div class="bg-gray-50 dark:bg-gray-900 rounded p-4 overflow-x-auto">
-                        <pre class="text-xs text-gray-800 dark:text-gray-200 font-mono">{{ json_encode(['items' => [$apiData]], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre>
+                        @php
+                            $jsonData = $apiData;
+                            // priceCalculationDetails'ı JSON'dan kaldır
+                            unset($jsonData['priceCalculationDetails']);
+                        @endphp
+                        <pre class="text-xs text-gray-800 dark:text-gray-200 font-mono">{{ json_encode(['items' => [$jsonData]], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre>
                     </div>
                 </div>
 
@@ -193,7 +212,34 @@
                             {{ is_string($apiData['quantity']) && $apiData['quantity'] === 'Sistemde Veri yok' ? '❌ Yok' : '✅ ' . $apiData['quantity'] }}
                         </div>
                     </div>
+                    <div class="bg-gray-50 dark:bg-gray-900 rounded p-3">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Satış Fiyatı (TRY)</div>
+                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                            @if(is_string($apiData['salePrice']) && $apiData['salePrice'] === 'Sistemde Veri yok')
+                                ❌ Yok
+                            @else
+                                ✅ {{ number_format((float)$apiData['salePrice'], 2, ',', '.') }} ₺
+                            @endif
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-900 rounded p-3">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">KDV Oranı</div>
+                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                            {{ $apiData['vatRate'] }}%
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-900 rounded p-3">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Kategori Komisyon Oranı</div>
+                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                            @if($product->category && $product->category->commission_rate !== null)
+                                {{ number_format((float)$product->category->commission_rate, 2, ',', '.') }}%
+                            @else
+                                20.00% <span class="text-xs text-gray-400">(Varsayılan)</span>
+                            @endif
+                        </div>
+                    </div>
                 </div>
+
 
                 <!-- Attributes Summary -->
                 <div class="mt-4">
@@ -304,7 +350,189 @@
     @endif
 </div>
 
+<!-- Fiyat Detay Modal -->
+<div id="price-details-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Fiyat Hesaplama Detayları</h3>
+            <button 
+                onclick="closePriceDetailsModal()"
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="p-6" id="price-details-content">
+            <!-- İçerik JavaScript ile doldurulacak -->
+        </div>
+    </div>
+</div>
+
 <script>
+// Fiyat detayları verilerini sakla
+const priceDetailsData = {
+    @foreach($productsWithApiData as $item)
+        @if($item['price_details'])
+        {{ $item['product']->id }}: @json($item['price_details']),
+        @endif
+    @endforeach
+};
+
+function showPriceDetailsModal(productId) {
+    const details = priceDetailsData[productId];
+    if (!details) {
+        alert('Fiyat detayları bulunamadı');
+        return;
+    }
+    
+    const modal = document.getElementById('price-details-modal');
+    const content = document.getElementById('price-details-content');
+    
+    let html = `
+        <div class="space-y-4">
+            <!-- Base Price -->
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border-l-4 border-blue-500">
+                <div class="flex justify-between items-center mb-2">
+                    <div>
+                        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">1. Base Fiyat (Fiyat_Ozel)</h5>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">XML'den gelen Fiyat_Ozel değerinin TRY'ye çevrilmiş hali</p>
+                    </div>
+                    <span class="text-lg font-bold text-blue-600 dark:text-blue-400">${formatPrice(details.base_price)} ₺</span>
+                </div>
+            </div>
+            
+            <!-- Kategori Komisyon Oranı -->
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border-l-4 border-green-500">
+                <div class="flex justify-between items-center mb-2">
+                    <div>
+                        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">2. Kategori Komisyon Oranı Ekleme <span class="text-xs font-normal text-gray-500">(Sistem Komisyonu)</span></h5>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Kategori Komisyon Oranı: <span class="font-semibold">${formatNumber(details.category_commission_rate)}%</span> 
+                            <span class="text-gray-400">[${details.category_commission_rate_source}]</span>
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Base fiyat üzerine kategori komisyon oranı eklenir: ${formatPrice(details.base_price)} × (1 + ${formatNumber(details.category_commission_rate)}%) = ${formatPrice(details.price_with_category_commission)}
+                        </p>
+                    </div>
+                    <span class="text-lg font-bold text-green-600 dark:text-green-400">+ ${formatPrice(details.category_commission_amount)} ₺</span>
+                </div>
+                <div class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600 dark:text-gray-400">Kategori Komisyon ile Fiyat:</span>
+                        <span class="font-semibold text-gray-900 dark:text-white">${formatPrice(details.price_with_category_commission)} ₺</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- KDV -->
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border-l-4 border-orange-500">
+                <div class="flex justify-between items-center mb-2">
+                    <div>
+                        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">3. KDV Ekleme</h5>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            KDV Oranı: <span class="font-semibold">${details.vat_rate}%</span> 
+                            <span class="text-gray-400">[${details.vat_rate_source}]</span>
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Kategori komisyon ile fiyat üzerinden KDV hesaplanır: ${formatPrice(details.price_with_category_commission)} × ${details.vat_rate}% = ${formatPrice(details.vat_amount)}
+                        </p>
+                    </div>
+                    <span class="text-lg font-bold text-orange-600 dark:text-orange-400">+ ${formatPrice(details.vat_amount)} ₺</span>
+                </div>
+                <div class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600 dark:text-gray-400">KDV ile Fiyat:</span>
+                        <span class="font-semibold text-gray-900 dark:text-white">${formatPrice(details.price_with_vat)} ₺</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Pazaryeri Kategori Komisyonu -->
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border-l-4 border-indigo-500">
+                <div class="flex justify-between items-center mb-2">
+                    <div>
+                        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">4. Pazaryeri Kategori Komisyonu Ekleme <span class="text-xs font-normal text-gray-500">(Pazaryeri Komisyonu)</span></h5>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Pazaryeri Kategori Komisyon Oranı: <span class="font-semibold">${formatNumber(details.marketplace_category_commission_rate || 0)}%</span> 
+                            <span class="text-gray-400">[${details.marketplace_category_commission_source || 'Uygulanmadı'}]</span>
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            ${details.marketplace_category_commission_rate > 0 ? 
+                                `KDV ile fiyat üzerinden pazaryeri kategori komisyonu hesaplanır: ${formatPrice(details.price_with_vat)} × ${formatNumber(details.marketplace_category_commission_rate)}% = ${formatPrice(details.marketplace_category_commission_amount)}` :
+                                `Pazaryeri kategori komisyonu tanımlanmamış, bu adım atlanır.`
+                            }
+                        </p>
+                    </div>
+                    <span class="text-lg font-bold ${details.marketplace_category_commission_rate > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500'}">+ ${formatPrice(details.marketplace_category_commission_amount || 0)} ₺</span>
+                </div>
+                <div class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600 dark:text-gray-400">Pazaryeri Komisyon ile Fiyat:</span>
+                        <span class="font-semibold text-gray-900 dark:text-white">${formatPrice(details.price_with_marketplace_commission || details.price_with_vat)} ₺</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Kargo -->
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border-l-4 border-red-500">
+                <div class="flex justify-between items-center mb-2">
+                    <div>
+                        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">5. Kargo Ekleme</h5>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Sabit kargo ücreti (100 TL)</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            ${details.marketplace_category_commission_rate > 0 
+                                ? `Pazaryeri komisyon ile fiyata kargo eklenir: ${formatPrice(details.price_with_marketplace_commission)} + ${formatPrice(details.cargo_fee)} = ${formatPrice(details.final_price)}`
+                                : `KDV ile fiyata kargo eklenir: ${formatPrice(details.price_with_vat)} + ${formatPrice(details.cargo_fee)} = ${formatPrice(details.final_price)}`
+                            }
+                        </p>
+                    </div>
+                    <span class="text-lg font-bold text-red-600 dark:text-red-400">+ ${formatPrice(details.cargo_fee)} ₺</span>
+                </div>
+            </div>
+            
+            <!-- Final Price -->
+            <div class="bg-gradient-to-r from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-lg p-6 mt-4">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h5 class="text-lg font-bold text-white">FİNAL SATIŞ FİYATI</h5>
+                        <p class="text-xs text-blue-100 mt-1">Tüm eklemeler yapıldıktan sonraki nihai fiyat</p>
+                    </div>
+                    <span class="text-3xl font-bold text-white">${formatPrice(details.final_price)} ₺</span>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    content.innerHTML = html;
+    modal.classList.remove('hidden');
+}
+
+function closePriceDetailsModal() {
+    document.getElementById('price-details-modal').classList.add('hidden');
+}
+
+function formatPrice(price) {
+    return new Intl.NumberFormat('tr-TR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(price);
+}
+
+function formatNumber(num) {
+    return new Intl.NumberFormat('tr-TR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(num);
+}
+
+// Modal dışına tıklanınca kapat
+document.getElementById('price-details-modal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closePriceDetailsModal();
+    }
+});
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Ready products page loaded');
     const checkStatusBtn = document.getElementById('check-status-btn');
