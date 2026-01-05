@@ -5,14 +5,19 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Category;
+use App\Models\Attribute;
 use App\Models\CategoryAttribute;
 use App\Models\AttributeValue;
 use App\Models\XmlAttributeMapping;
 use App\Models\Marketplace;
+use App\Models\MarketplaceCategory;
+use App\Models\MarketplaceCountryMapping;
 use App\Models\MarketplaceShippingCompanyMapping;
+use App\Models\TrendyolProductRequest;
 use App\Helpers\MarketplaceConfig;
 use App\Services\ProductAttributePersistenceService;
 use App\Services\ProductPriceCalculationService;
+use App\Services\TrendyolProductService;
 use Illuminate\Http\Request;
 
 class ReadyProductController extends Controller
@@ -184,25 +189,38 @@ class ReadyProductController extends Controller
             'barcode' => $this->getBarcodeWithPrefix($product),
             'title' => $product->title ?: 'Sistemde Veri yok',
             'productMainId' =>(string) $product->id,
-            'brandId' => $product->brand_id ?: 'Sistemde Veri yok',
-            'categoryId' => $product->category_id ?: 'Sistemde Veri yok',
+            'brandId' => $this->getTrendyolBrandId($product),
+            'categoryId' => $this->getTrendyolCategoryId($product),
             'quantity' => $this->getTotalStock($product),
             'stockCode' => $product->sku ?: 'Sistemde Veri yok',
             'dimensionalWeight' => (int)$product->desi ?? 'Sistemde Veri yok',
-            'description' => $product->description ?: 'Sistemde Veri yok',
+            'description' => $this->truncateDescription($product->description),
             'currencyType' => $product->currency ?: 'TRY',
             'listPrice' => $this->getSalePrice($product, 'trendyol'),
             'salePrice' => $this->getSalePrice($product, 'trendyol'),
             'vatRate' => $this->getVatRate($product),
             'cargoCompanyId' => $this->getCargoCompanyId($product),
-            
-           
-            'deliveryDuration' => 1,
             'images' => $this->prepareImages($product),
             'attributes' => $this->prepareAttributes($product),
         ];
 
         return $data;
+    }
+
+    /**
+     * Description'ı ilk 5 karakter + ... olacak şekilde kısalt
+     */
+    private function truncateDescription(?string $description): string
+    {
+        if (empty($description)) {
+            return 'Sistemde Veri yok';
+        }
+
+        if (mb_strlen($description) <= 5) {
+            return $description;
+        }
+
+        return mb_substr($description, 0, 5) . '...';
     }
 
     /**
@@ -349,12 +367,30 @@ class ReadyProductController extends Controller
     {
         $attributes = [];
 
+        // Ürünü brand ve originCountry ile yükle (menşei için gerekli)
+        $product->load('brand.originCountry');
+
         // Kategoriye göre required attribute'ları al
         if ($product->category_id) {
             $requiredAttributes = CategoryAttribute::where('category_id', $product->category_id)
                 ->where('is_required', true)
                 ->with('attribute') // Attribute'ları eager load et (external_id için)
                 ->get();
+            
+            // Menşei özelliğini de ekle (required olmasa bile)
+            $menşeiAttribute = \App\Models\Attribute::where(function($query) {
+                $query->whereRaw('LOWER(TRIM(name)) = ?', ['menşei'])
+                      ->orWhereRaw('LOWER(TRIM(code)) = ?', ['menşei'])
+                      ->orWhereRaw('LOWER(TRIM(code)) = ?', ['mensei']);
+            })->first();
+            
+            // Menşei özelliği required attributes'te yoksa ekle
+            if ($menşeiAttribute && !$requiredAttributes->contains('attribute_id', $menşeiAttribute->id)) {
+                $requiredAttributes->push((object)[
+                    'attribute' => $menşeiAttribute,
+                    'is_required' => false,
+                ]);
+            }
 
             // Product'ın product_attributes tablosundan verileri al (SINGLE source of truth)
             $productAttributesMap = [];
@@ -386,7 +422,34 @@ class ReadyProductController extends Controller
 
                 // Menşei özelliği ve brand->originCountry mevcut ise
                 if ($isMenşei && $product->brand && $product->brand->originCountry) {
-                    // Menşei bilgisi mevcut, AttributeValue'da ara veya custom değer olarak ekle
+                    // Trendyol marketplace'ini bul
+                    $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
+                    
+                    if ($trendyolMarketplace) {
+                        // Marketplace country mapping'i bul
+                        $countryMapping = MarketplaceCountryMapping::where('marketplace_id', $trendyolMarketplace->id)
+                            ->where('country_id', $product->brand->originCountry->id)
+                            ->where('status', 'active')
+                            ->first();
+                        
+                        if ($countryMapping && $countryMapping->external_country_id) {
+                            // Mapping'den Trendyol attribute value ID'sini kullan
+                            $attributes[] = [
+                                'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                                'attributeValueId' => $countryMapping->external_country_id, // Trendyol menşei value ID
+                            ];
+                            continue;
+                        } elseif ($countryMapping && $countryMapping->external_country_code) {
+                            // Mapping'den Trendyol country code'unu custom değer olarak kullan
+                            $attributes[] = [
+                                'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                                'customAttributeValue' => $countryMapping->external_country_code,
+                            ];
+                            continue;
+                        }
+                    }
+                    
+                    // Mapping yoksa, AttributeValue'da ara veya custom değer olarak ekle
                     $originCountryName = $product->brand->originCountry->name;
                     $normalizedOrigin = $this->normalizeValue($originCountryName);
                     
@@ -466,6 +529,108 @@ class ReadyProductController extends Controller
                         $attributes[] = [
                             'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
                             'customAttributeValue' => 'Sistemde Veri yok',
+                        ];
+                    }
+                }
+            }
+        }
+        
+        // Menşei bilgisini her zaman ekle (required attributes listesinde olmasa bile)
+        // Eğer brand ve originCountry varsa menşei bilgisini ekle
+        if ($product->brand && $product->brand->originCountry) {
+             // Menşei özelliğini bul - Trendyol'da menşei attribute ID'si genellikle 1192
+            // Önce external_id = 1192 olanı ara, yoksa name/code ile ara
+            $menşeiAttribute = Attribute::where('external_id', 1192)
+                ->orWhere(function($query) {
+                    $query->whereRaw('LOWER(TRIM(name)) = ?', ['menşei'])
+                          ->orWhereRaw('LOWER(TRIM(code)) = ?', ['menşei'])
+                          ->orWhereRaw('LOWER(TRIM(code)) = ?', ['mensei'])
+                          ->orWhereRaw('LOWER(TRIM(name)) LIKE ?', ['%menşei%'])
+                          ->orWhereRaw('LOWER(TRIM(name)) LIKE ?', ['%mensei%']);
+                })
+                ->first();
+            
+            // Eğer menşei özelliği bulunamadıysa, external_id = 1192 ile oluştur veya kullan
+            if (!$menşeiAttribute) {
+                // Trendyol menşei attribute ID'si 1192
+                $menşeiAttribute = Attribute::firstOrCreate(
+                    ['external_id' => 1192],
+                    [
+                        'name' => 'Menşei',
+                        'code' => 'mensei',
+                        'data_type' => 'enum',
+                        'status' => 'active',
+                    ]
+                );
+            }
+            
+            if ($menşeiAttribute) {
+                // Menşei zaten attributes array'inde var mı kontrol et
+                $menşeiExists = false;
+                $menşeiAttributeId = $menşeiAttribute->external_id ?? $menşeiAttribute->id;
+                foreach ($attributes as $attr) {
+                    if (isset($attr['attributeId']) && 
+                        ($attr['attributeId'] == $menşeiAttributeId || 
+                         $attr['attributeId'] == $menşeiAttribute->external_id || 
+                         $attr['attributeId'] == $menşeiAttribute->id)) {
+                        $menşeiExists = true;
+                        break;
+                    }
+                }
+                
+                // Menşei yoksa ekle
+                if (!$menşeiExists) {
+                    // Trendyol marketplace'ini bul
+                    $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
+                    
+                    if ($trendyolMarketplace) {
+                        // Marketplace country mapping'i bul
+                        $countryMapping = MarketplaceCountryMapping::where('marketplace_id', $trendyolMarketplace->id)
+                            ->where('country_id', $product->brand->originCountry->id)
+                            ->where('status', 'active')
+                            ->first();
+                        
+                        if ($countryMapping && $countryMapping->external_country_id) {
+                            // Mapping'den Trendyol attribute value ID'sini kullan
+                            $attributes[] = [
+                                'attributeId' => $menşeiAttribute->external_id ?? 1192, // Trendyol menşei attribute ID
+                                'attributeValueId' => $countryMapping->external_country_id, // Trendyol menşei value ID
+                            ];
+                        } elseif ($countryMapping && $countryMapping->external_country_code) {
+                            // Mapping'den Trendyol country code'unu custom değer olarak kullan
+                            $attributes[] = [
+                                'attributeId' => $menşeiAttribute->external_id ?? 1192, // Trendyol menşei attribute ID
+                                'customAttributeValue' => $countryMapping->external_country_code,
+                            ];
+                        } else {
+                            // Mapping yoksa, AttributeValue'da ara veya custom değer olarak ekle
+                            $originCountryName = $product->brand->originCountry->name;
+                            $normalizedOrigin = $this->normalizeValue($originCountryName);
+                            
+                            // AttributeValue'da ara
+                            $attributeValue = AttributeValue::where('attribute_id', $menşeiAttribute->id)
+                                ->where('normalized_value', $normalizedOrigin)
+                                ->where('status', 'active')
+                                ->first();
+                            
+                            if ($attributeValue && $attributeValue->external_id) {
+                                $attributes[] = [
+                                    'attributeId' => $menşeiAttribute->external_id ?? 1192, // Trendyol menşei attribute ID
+                                    'attributeValueId' => $attributeValue->external_id, // Trendyol attribute value ID
+                                ];
+                            } else {
+                                // Custom değer olarak ekle
+                                $attributes[] = [
+                                    'attributeId' => $menşeiAttribute->external_id ?? 1192, // Trendyol menşei attribute ID
+                                    'customAttributeValue' => $originCountryName,
+                                ];
+                            }
+                        }
+                    } else {
+                        // Marketplace bulunamadı, custom değer olarak ekle
+                        $attributes[] = [
+                            'attributeId' => $menşeiAttribute->external_id ?? 1192, // Trendyol menşei attribute ID
+                            'customAttributeValue' => $product->brand->originCountry->name,
                         ];
                     }
                 }
@@ -687,6 +852,569 @@ class ReadyProductController extends Controller
         }
         
         return 'Uygulanmadı';
+    }
+
+    /**
+     * Trendyol kategori ID'sini al
+     */
+    private function getTrendyolCategoryId(Product $product): string|int
+    {
+        if (!$product->category_id) {
+            return 'Sistemde Veri yok';
+        }
+
+        // Trendyol marketplace'ini bul
+        $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
+        if (!$trendyolMarketplace) {
+            return 'Sistemde Veri yok';
+        }
+
+        // Category mapping'i bul
+        $categoryMapping = MarketplaceCategory::where('marketplace_id', $trendyolMarketplace->id)
+            ->where('global_category_id', $product->category_id)
+            ->where('is_mapped', true)
+            ->first();
+
+        if ($categoryMapping && $categoryMapping->marketplace_category_id) {
+            return (int) $categoryMapping->marketplace_category_id;
+        }
+
+        // Mapping yoksa sistem category ID'sini döndür
+        return $product->category_id ?: 'Sistemde Veri yok';
+    }
+
+    /**
+     * Trendyol marka ID'sini al
+     */
+    private function getTrendyolBrandId(Product $product): string|int
+    {
+        if (!$product->brand_id) {
+            return 'Sistemde Veri yok';
+        }
+
+        // Trendyol marketplace'ini bul
+        $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
+        if (!$trendyolMarketplace) {
+            return 'Sistemde Veri yok';
+        }
+
+        // Brand mapping'i bul
+        $brandMapping = \App\Models\MarketplaceBrandMapping::where('marketplace_id', $trendyolMarketplace->id)
+            ->where('brand_id', $product->brand_id)
+            ->where('status', 'mapped')
+            ->first();
+
+        if ($brandMapping && $brandMapping->marketplace_brand_id) {
+            return $brandMapping->marketplace_brand_id;
+        }
+
+        // Fallback to system brand ID if no mapped Trendyol brand ID is found
+        return (int) $product->brand_id;
+    }
+
+    /**
+     * Ürünleri Trendyol API'ye gönder
+     */
+    public function sendProducts(Request $request)
+    {
+        $request->validate([
+            'product_ids' => 'required|array',
+            'product_ids.*' => 'exists:products,id',
+        ]);
+
+        $products = Product::with([
+            'category',
+            'variants.currencyRelation',
+            'images',
+            'productAttributes.attribute',
+            'productAttributes.attributeValue',
+            'brand'
+        ])
+        ->whereIn('id', $request->product_ids)
+        ->where('status', 'READY')
+        ->get();
+
+        if ($products->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gönderilecek ürün bulunamadı.',
+            ], 400);
+        }
+
+        // Ürünleri API formatına çevir
+        $items = $products->map(function ($product) {
+            return $this->prepareApiData($product);
+        })->toArray();
+
+        // Her ürün için ayrı kayıt oluştur (pending durumunda)
+        $productRequests = [];
+        foreach ($products as $product) {
+            $productRequest = TrendyolProductRequest::create([
+                'product_id' => $product->id,
+                'request_data' => ['items' => [$this->prepareApiData($product)]],
+                'status' => 'pending',
+                'items_count' => 1,
+                'sent_at' => now(),
+            ]);
+            $productRequests[] = $productRequest;
+        }
+
+        // Trendyol API'ye gönder (items array'i içinde gönder)
+        $trendyolService = new TrendyolProductService();
+        $response = $trendyolService->sendProducts(['items' => $items]);
+
+        // Tüm kayıtları güncelle
+        if (!$response || !$response['success']) {
+            foreach ($productRequests as $productRequest) {
+                $productRequest->update([
+                    'status' => 'failed',
+                    'error_message' => $response['error'] ?? 'Bilinmeyen hata',
+                    'response_data' => $response,
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Ürünler Trendyol API\'ye gönderilemedi.',
+                'error' => $response['error'] ?? 'Bilinmeyen hata',
+                'request_ids' => array_map(fn($r) => $r->id, $productRequests),
+            ], 500);
+        }
+
+        // batchRequestId'yi al
+        $batchRequestId = $response['data']['batchRequestId'] ?? null;
+
+        if (!$batchRequestId) {
+            foreach ($productRequests as $productRequest) {
+                $productRequest->update([
+                    'status' => 'failed',
+                    'error_message' => 'Batch Request ID alınamadı',
+                    'response_data' => $response['data'],
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Batch Request ID alınamadı.',
+                'response' => $response['data'],
+                'request_ids' => array_map(fn($r) => $r->id, $productRequests),
+            ], 500);
+        }
+
+        // Tüm kayıtları güncelle (sent durumunda)
+        foreach ($productRequests as $productRequest) {
+            $productRequest->update([
+                'batch_request_id' => $batchRequestId,
+                'status' => 'sent',
+                'response_data' => $response['data'],
+            ]);
+        }
+
+        // Batch status kontrolünü otomatik olarak yap (arka planda)
+        // Trendyol API'nin batch'ı işlemesi için kısa bir süre bekleyelim
+        $this->checkBatchStatusAsync($batchRequestId);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ürünler başarıyla gönderildi. Batch durumu kontrol ediliyor...',
+            'batchRequestId' => $batchRequestId,
+            'response' => $response['data'],
+            'request_ids' => array_map(fn($r) => $r->id, $productRequests),
+        ]);
+    }
+
+    /**
+     * Batch status kontrolünü arka planda yap
+     */
+    private function checkBatchStatusAsync(string $batchRequestId): void
+    {
+        // Closure'ı dispatch et (arka planda çalışır)
+        dispatch(function () use ($batchRequestId) {
+            // Trendyol API'nin batch'ı işlemesi için 3 saniye bekle
+            sleep(3);
+            
+            // Batch status kontrolü yap
+            $trendyolService = new TrendyolProductService();
+            $response = $trendyolService->checkBatchStatus($batchRequestId);
+            
+            if (!$response || !$response['success']) {
+                return;
+            }
+            
+            $batchData = $response['data'];
+            
+            // Batch data'nın tam olarak kaydedildiğinden emin olmak için log ekle
+            \Log::channel('imports')->debug('Batch Status Data (Async)', [
+                'batch_request_id' => $batchRequestId,
+                'data_size' => strlen(json_encode($batchData)),
+                'data_keys' => array_keys($batchData ?? []),
+            ]);
+            
+            // Aynı batch_request_id'ye sahip tüm kayıtları bul
+            $productRequests = TrendyolProductRequest::where('batch_request_id', $batchRequestId)->get();
+            
+            if ($productRequests->isEmpty()) {
+                return;
+            }
+            
+            // Batch durumuna göre status belirle
+            $batchStatus = null;
+            $batchFailureReasons = [];
+            
+            if (isset($batchData['status'])) {
+                $batchStatus = strtolower($batchData['status']);
+                
+                if ($batchStatus === 'failed' && isset($batchData['failureReasons']) && is_array($batchData['failureReasons'])) {
+                    $batchFailureReasons = $batchData['failureReasons'];
+                }
+            }
+
+            // Items array'ini kontrol et
+            $itemsStatus = [];
+            if (isset($batchData['items']) && is_array($batchData['items'])) {
+                foreach ($batchData['items'] as $item) {
+                    if (isset($item['status'])) {
+                        $itemStatus = strtolower($item['status']);
+                        $itemFailureReasons = [];
+                        
+                        if ($itemStatus === 'failed' && isset($item['failureReasons']) && is_array($item['failureReasons'])) {
+                            $itemFailureReasons = $item['failureReasons'];
+                        }
+                        
+                        if (isset($item['productMainId'])) {
+                            $itemsStatus[$item['productMainId']] = [
+                                'status' => $itemStatus,
+                                'failureReasons' => $itemFailureReasons,
+                            ];
+                        }
+                    }
+                }
+            }
+
+            // Her kayıt için güncelleme yap
+            foreach ($productRequests as $productRequest) {
+                $status = 'sent';
+                $errorMessage = null;
+                $successCount = 0;
+                $failedCount = 0;
+
+                if ($batchStatus) {
+                    if (in_array($batchStatus, ['completed', 'success'])) {
+                        $status = 'success';
+                    } elseif (in_array($batchStatus, ['failed', 'error'])) {
+                        $status = 'failed';
+                        if (!empty($batchFailureReasons)) {
+                            $errorMessage = 'Batch Hataları: ' . implode(' | ', $batchFailureReasons);
+                        }
+                    } elseif ($batchStatus === 'partial') {
+                        $status = 'partial';
+                    }
+                }
+
+                // Bu ürün için item durumunu kontrol et
+                if ($productRequest->product_id) {
+                    $product = Product::find($productRequest->product_id);
+                    if ($product) {
+                        $productMainId = (string) $product->id;
+                        if (isset($itemsStatus[$productMainId])) {
+                            $itemStatusInfo = $itemsStatus[$productMainId];
+                            
+                            if ($itemStatusInfo['status'] === 'failed') {
+                                $status = 'failed';
+                                if (!empty($itemStatusInfo['failureReasons'])) {
+                                    $itemErrorMsg = 'Ürün Hataları: ' . implode(' | ', $itemStatusInfo['failureReasons']);
+                                    $errorMessage = $errorMessage ? $errorMessage . "\n" . $itemErrorMsg : $itemErrorMsg;
+                                }
+                            } elseif ($itemStatusInfo['status'] === 'success' && $status !== 'failed') {
+                                $status = 'success';
+                            }
+                        }
+                    }
+                }
+
+                // Başarılı/başarısız sayılarını hesapla
+                if (isset($batchData['items'])) {
+                    foreach ($batchData['items'] as $item) {
+                        if (isset($item['status'])) {
+                            if (strtolower($item['status']) === 'success') {
+                                $successCount++;
+                            } else {
+                                $failedCount++;
+                            }
+                        }
+                    }
+                }
+
+                // Batch status data'yı tam olarak kaydet (JSON encoding ile)
+                // Laravel otomatik olarak JSON'a çevirir ama manuel encoding ile garantileyelim
+                $batchStatusDataJson = json_encode($batchData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                
+                $updateData = [
+                    'batch_status_data' => json_decode($batchStatusDataJson, true), // Array olarak kaydet
+                    'status' => $status,
+                    'success_count' => $successCount,
+                    'failed_count' => $failedCount,
+                ];
+
+                if ($errorMessage) {
+                    $updateData['error_message'] = $errorMessage;
+                }
+
+                if ($status === 'success' || $status === 'failed' || $status === 'partial') {
+                    $updateData['completed_at'] = now();
+                }
+
+                $productRequest->update($updateData);
+            }
+        })->afterResponse();
+    }
+
+    /**
+     * Batch request durumunu kontrol et
+     */
+    public function checkBatchStatus(Request $request, string $batchRequestId)
+    {
+        // Kaydı bul
+        $productRequest = TrendyolProductRequest::where('batch_request_id', $batchRequestId)->first();
+
+        $trendyolService = new TrendyolProductService();
+        $response = $trendyolService->checkBatchStatus($batchRequestId);
+
+        if (!$response || !$response['success']) {
+            if ($productRequest) {
+                $productRequest->update([
+                    'error_message' => $response['error'] ?? 'Bilinmeyen hata',
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Batch durumu kontrol edilemedi.',
+                'error' => $response['error'] ?? 'Bilinmeyen hata',
+            ], 500);
+        }
+
+        $batchData = $response['data'];
+        
+        // Batch data'nın tam olarak kaydedildiğinden emin olmak için log ekle
+        \Log::channel('imports')->debug('Batch Status Data', [
+            'batch_request_id' => $batchRequestId,
+            'data_size' => strlen(json_encode($batchData)),
+            'data_keys' => array_keys($batchData ?? []),
+        ]);
+
+        // Aynı batch_request_id'ye sahip tüm kayıtları bul
+        $productRequests = TrendyolProductRequest::where('batch_request_id', $batchRequestId)->get();
+
+        if ($productRequests->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bu batch request ID\'ye ait kayıt bulunamadı.',
+            ], 404);
+        }
+
+        // Batch durumuna göre status belirle
+        $batchStatus = null;
+        $batchFailureReasons = [];
+        
+        if (isset($batchData['status'])) {
+            $batchStatus = strtolower($batchData['status']);
+            
+            // Batch seviyesinde FAILED durumu ve failureReasons kontrolü
+            if ($batchStatus === 'failed' && isset($batchData['failureReasons']) && is_array($batchData['failureReasons'])) {
+                $batchFailureReasons = $batchData['failureReasons'];
+            }
+        }
+
+        // Items array'ini kontrol et
+        $itemsStatus = [];
+        if (isset($batchData['items']) && is_array($batchData['items'])) {
+            foreach ($batchData['items'] as $item) {
+                if (isset($item['status'])) {
+                    $itemStatus = strtolower($item['status']);
+                    $itemFailureReasons = [];
+                    
+                    // Item seviyesinde FAILED durumu ve failureReasons kontrolü
+                    if ($itemStatus === 'failed' && isset($item['failureReasons']) && is_array($item['failureReasons'])) {
+                        $itemFailureReasons = $item['failureReasons'];
+                    }
+                    
+                    // Item'ın productMainId'sine göre kaydet
+                    if (isset($item['productMainId'])) {
+                        $itemsStatus[$item['productMainId']] = [
+                            'status' => $itemStatus,
+                            'failureReasons' => $itemFailureReasons,
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Her kayıt için güncelleme yap
+        foreach ($productRequests as $productRequest) {
+            $status = 'sent';
+            $errorMessage = null;
+            $successCount = 0;
+            $failedCount = 0;
+
+            // Batch durumuna göre status belirle
+            if ($batchStatus) {
+                if (in_array($batchStatus, ['completed', 'success'])) {
+                    $status = 'success';
+                } elseif (in_array($batchStatus, ['failed', 'error'])) {
+                    $status = 'failed';
+                    // Batch seviyesinde failureReasons varsa error_message'a yaz
+                    if (!empty($batchFailureReasons)) {
+                        $errorMessage = 'Batch Hataları: ' . implode(' | ', $batchFailureReasons);
+                    }
+                } elseif ($batchStatus === 'partial') {
+                    $status = 'partial';
+                }
+            }
+
+            // Bu ürün için item durumunu kontrol et
+            if ($productRequest->product_id) {
+                $product = Product::find($productRequest->product_id);
+                if ($product) {
+                    // productMainId olarak product->id kullanılıyor
+                    $productMainId = (string) $product->id;
+                    if (isset($itemsStatus[$productMainId])) {
+                        $itemStatusInfo = $itemsStatus[$productMainId];
+                        
+                        // Item seviyesinde FAILED ise status'u failed yap (batch seviyesindeki durumu override eder)
+                        if ($itemStatusInfo['status'] === 'failed') {
+                            $status = 'failed';
+                            
+                            // Item seviyesinde failureReasons varsa error_message'a yaz
+                            if (!empty($itemStatusInfo['failureReasons'])) {
+                                $itemErrorMsg = 'Ürün Hataları: ' . implode(' | ', $itemStatusInfo['failureReasons']);
+                                $errorMessage = $errorMessage ? $errorMessage . "\n" . $itemErrorMsg : $itemErrorMsg;
+                            }
+                        } elseif ($itemStatusInfo['status'] === 'success' && $status !== 'failed') {
+                            // Item seviyesinde success ise ve batch seviyesinde failed değilse success yap
+                            $status = 'success';
+                        }
+                    }
+                }
+            }
+
+            // Başarılı/başarısız sayılarını hesapla
+            if (isset($batchData['items'])) {
+                foreach ($batchData['items'] as $item) {
+                    if (isset($item['status'])) {
+                        if (strtolower($item['status']) === 'success') {
+                            $successCount++;
+                        } else {
+                            $failedCount++;
+                        }
+                    }
+                }
+            }
+
+            // Batch status data'yı tam olarak kaydet (JSON encoding ile)
+            // Laravel otomatik olarak JSON'a çevirir ama manuel encoding ile garantileyelim
+            $batchStatusDataJson = json_encode($batchData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            
+            $updateData = [
+                'batch_status_data' => json_decode($batchStatusDataJson, true), // Array olarak kaydet
+                'status' => $status,
+                'success_count' => $successCount,
+                'failed_count' => $failedCount,
+            ];
+
+            // Error message ekle
+            if ($errorMessage) {
+                $updateData['error_message'] = $errorMessage;
+            }
+
+            // Tamamlanma zamanını ayarla
+            if ($status === 'success' || $status === 'failed' || $status === 'partial') {
+                $updateData['completed_at'] = now();
+            }
+
+            $productRequest->update($updateData);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $batchData,
+            'request_id' => $productRequest?->id,
+        ]);
+    }
+
+    /**
+     * İstek detaylarını getir
+     */
+    public function getRequestDetails(string $requestId)
+    {
+        $request = TrendyolProductRequest::findOrFail($requestId);
+
+        return response()->json([
+            'success' => true,
+            'request' => [
+                'id' => $request->id,
+                'product_id' => $request->product_id,
+                'batch_request_id' => $request->batch_request_id,
+                'status' => $request->status,
+                'items_count' => $request->items_count,
+                'success_count' => $request->success_count,
+                'failed_count' => $request->failed_count,
+                'sent_at' => $request->sent_at ? $request->sent_at->format('Y-m-d H:i:s') : null,
+                'completed_at' => $request->completed_at ? $request->completed_at->format('Y-m-d H:i:s') : null,
+                'error_message' => $request->error_message,
+                'request_data' => $request->request_data,
+                'response_data' => $request->response_data,
+                'batch_status_data' => $request->batch_status_data,
+            ],
+        ]);
+    }
+
+    /**
+     * Ürün için tüm istek geçmişini getir
+     */
+    public function getProductRequestHistory(int $productId)
+    {
+        $requests = TrendyolProductRequest::where('product_id', $productId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id' => $request->id,
+                    'batch_request_id' => $request->batch_request_id,
+                    'status' => $request->status,
+                    'items_count' => $request->items_count,
+                    'success_count' => $request->success_count,
+                    'failed_count' => $request->failed_count,
+                    'sent_at' => $request->sent_at ? $request->sent_at->format('Y-m-d H:i:s') : null,
+                    'completed_at' => $request->completed_at ? $request->completed_at->format('Y-m-d H:i:s') : null,
+                    'error_message' => $request->error_message,
+                    'request_data' => $request->request_data,
+                    'response_data' => $request->response_data,
+                    'batch_status_data' => $request->batch_status_data,
+                    'created_at' => $request->created_at->format('Y-m-d H:i:s'),
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'requests' => $requests,
+        ]);
+    }
+
+    /**
+     * Ürün için batch detaylarını göster
+     */
+    public function showBatchDetails(int $productId)
+    {
+        $product = Product::with(['brand', 'category', 'variants', 'images'])
+            ->findOrFail($productId);
+
+        // Bu ürüne ait tüm batch isteklerini getir
+        $requests = TrendyolProductRequest::where('product_id', $productId)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return view('admin.ready-products.batch-details', compact('product', 'requests'));
     }
 }
 

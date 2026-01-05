@@ -92,6 +92,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Ready Products (Gönderilmeye Hazır Ürünler)
         Route::get('/ready-products', [\App\Http\Controllers\Admin\ReadyProductController::class, 'index'])->name('ready-products.index');
         Route::post('/ready-products/check-status', [\App\Http\Controllers\Admin\ReadyProductController::class, 'checkAndUpdateStatus'])->name('ready-products.check-status');
+        Route::post('/ready-products/send', [\App\Http\Controllers\Admin\ReadyProductController::class, 'sendProducts'])->name('ready-products.send');
+        Route::get('/ready-products/batch-status/{batchRequestId}', [\App\Http\Controllers\Admin\ReadyProductController::class, 'checkBatchStatus'])->name('ready-products.batch-status');
+        Route::get('/ready-products/request-details/{requestId}', [\App\Http\Controllers\Admin\ReadyProductController::class, 'getRequestDetails'])->name('ready-products.request-details');
+        Route::get('/ready-products/request-history/{productId}', [\App\Http\Controllers\Admin\ReadyProductController::class, 'getProductRequestHistory'])->name('ready-products.request-history');
+        Route::get('/ready-products/{productId}/batch-details', [\App\Http\Controllers\Admin\ReadyProductController::class, 'showBatchDetails'])->name('ready-products.batch-details');
         
         // XML Attribute Analysis
         Route::prefix('xml-attribute-analysis')->name('xml-attribute-analysis.')->group(function () {

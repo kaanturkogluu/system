@@ -25,6 +25,16 @@
                 </svg>
                 <span>IMPORTED Ürünleri Kontrol Et</span>
             </button>
+            <button 
+                type="button"
+                id="send-products-btn"
+                class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition duration-200 flex items-center space-x-2"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+                <span>Trendyol'a Gönder</span>
+            </button>
         </div>
     </div>
 
@@ -87,7 +97,7 @@
             $apiData = $item['api_data'];
             $priceDetails = $item['price_details'] ?? null;
         @endphp
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden" data-product-id="{{ $product->id }}">
             <!-- Product Header -->
             <div class="p-4 border-b border-gray-200 dark:border-gray-700">
                 <div class="flex items-start justify-between">
@@ -118,6 +128,68 @@
                         </div>
                     </div>
                     <div class="flex items-center space-x-2">
+                        @php
+                            $lastRequest = \App\Models\TrendyolProductRequest::where('product_id', $product->id)
+                                ->latest()
+                                ->first();
+                        @endphp
+                        @if($lastRequest)
+                            <div class="flex items-center space-x-1 px-2 py-1 rounded text-xs
+                                @if($lastRequest->status === 'success') bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200
+                                @elseif($lastRequest->status === 'failed') bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200
+                                @elseif($lastRequest->status === 'sent') bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200
+                                @else bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200
+                                @endif">
+                                @if($lastRequest->status === 'success' || $lastRequest->status === 'sent')
+                                    <a 
+                                        href="{{ route('admin.ready-products.batch-details', $product->id) }}"
+                                        class="flex items-center space-x-1 hover:opacity-80 transition-opacity cursor-pointer"
+                                        title="Batch Detaylarını Görüntüle"
+                                    >
+                                        <span>{{ ucfirst($lastRequest->status) }}</span>
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                    </a>
+                                @else
+                                    <button 
+                                        type="button"
+                                        onclick="showRequestHistory({{ $product->id }})"
+                                        class="flex items-center space-x-1 hover:opacity-80 transition-opacity"
+                                        title="İstek Geçmişini Görüntüle"
+                                    >
+                                        <span>{{ ucfirst($lastRequest->status) }}</span>
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                    </button>
+                                @endif
+                                @if($lastRequest->batch_request_id && $lastRequest->status !== 'success' && $lastRequest->status !== 'failed')
+                                    <button 
+                                        type="button"
+                                        onclick="checkBatchStatus('{{ $lastRequest->batch_request_id }}')"
+                                        class="ml-1 underline hover:no-underline"
+                                        title="Durumu Kontrol Et"
+                                    >
+                                        <svg class="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                        </svg>
+                                    </button>
+                                @endif
+                            </div>
+                        @endif
+                        <button 
+                            type="button"
+                            onclick="sendSingleProduct({{ $product->id }}, this)"
+                            class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded transition duration-200 flex items-center space-x-1"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                            <span>Gönder</span>
+                        </button>
                         <a 
                             href="{{ route('admin.xml-products.show', $product->id) }}"
                             class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition duration-200"
@@ -348,6 +420,41 @@
         </div>
     </div>
     @endif
+</div>
+
+<!-- Request Details Modal -->
+<div id="request-details-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50">
+    <div class="bg-white dark:bg-gray-800 w-full h-full flex flex-col">
+        <div class="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10 shadow-sm">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">İstek Yanıt Detayları</h3>
+            <div class="flex items-center space-x-3">
+                <button 
+                    id="refresh-batch-status-btn"
+                    onclick="refreshBatchStatus()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition duration-200 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Batch durumunu tekrar sorgula"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <span>Tekrar Sorgula</span>
+                </button>
+                <button 
+                    onclick="closeRequestDetailsModal()"
+                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                >
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-6">
+            <div id="request-details-content">
+                <!-- İçerik JavaScript ile doldurulacak -->
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Fiyat Detay Modal -->
@@ -675,6 +782,468 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
+
+    // Send Products to Trendyol
+    const sendProductsBtn = document.getElementById('send-products-btn');
+    if (sendProductsBtn) {
+        sendProductsBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            // Get all product IDs from the page
+            const productIds = Array.from(document.querySelectorAll('[data-product-id]')).map(el => {
+                return parseInt(el.getAttribute('data-product-id'));
+            });
+
+            if (productIds.length === 0) {
+                alert('Gönderilecek ürün bulunamadı.');
+                return;
+            }
+
+            if (!confirm(`${productIds.length} ürün Trendyol API'ye gönderilecek. Devam etmek istiyor musunuz?`)) {
+                return;
+            }
+
+            const btnText = sendProductsBtn.querySelector('span');
+            const originalText = btnText ? btnText.textContent : 'Trendyol\'a Gönder';
+            
+            // Disable button
+            sendProductsBtn.disabled = true;
+            if (btnText) {
+                btnText.textContent = 'Gönderiliyor...';
+            }
+
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+
+            fetch('{{ route("admin.ready-products.send") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    product_ids: productIds
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Ürünler başarıyla gönderildi!\nBatch Request ID: ${data.batchRequestId}`);
+                    
+                    // Sayfayı yenile (durum güncellemesi için)
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                    
+                    // Check batch status (opsiyonel - arka planda)
+                    if (data.batchRequestId) {
+                        setTimeout(() => {
+                            checkBatchStatus(data.batchRequestId);
+                        }, 2000);
+                    }
+                } else {
+                    alert('Hata: ' + (data.message || 'Ürünler gönderilemedi.'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Bir hata oluştu: ' + error.message);
+            })
+            .finally(() => {
+                sendProductsBtn.disabled = false;
+                if (btnText) {
+                    btnText.textContent = originalText;
+                }
+            });
+        });
+    }
+
+    // Check Batch Status (Global function)
+    window.checkBatchStatus = function(batchRequestId) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+        
+        fetch(`{{ route("admin.ready-products.batch-status", ":batchRequestId") }}`.replace(':batchRequestId', batchRequestId), {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show response in a modal or alert
+                const responseText = JSON.stringify(data.data, null, 2);
+                alert('Batch Durumu:\n\n' + responseText);
+                
+                // Sayfayı yenile (durum güncellemesi için)
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+            } else {
+                alert('Hata: ' + (data.message || 'Batch durumu kontrol edilemedi.'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Batch durumu kontrol edilirken bir hata oluştu: ' + error.message);
+        });
+    }
+
+    // Send Single Product
+    window.sendSingleProduct = function(productId, buttonElement) {
+        if (!confirm('Bu ürün Trendyol API\'ye gönderilecek. Devam etmek istiyor musunuz?')) {
+            return;
+        }
+
+        const button = buttonElement || event.target.closest('button');
+        const originalText = button.querySelector('span')?.textContent || 'Gönder';
+        const buttonIcon = button.querySelector('svg');
+        
+        // Disable button
+        button.disabled = true;
+        if (button.querySelector('span')) {
+            button.querySelector('span').textContent = 'Gönderiliyor...';
+        }
+        if (buttonIcon) {
+            buttonIcon.classList.add('animate-spin');
+        }
+
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+
+        fetch('{{ route("admin.ready-products.send") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                product_ids: [productId]
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Ürün başarıyla gönderildi!\nBatch Request ID: ${data.batchRequestId}`);
+                
+                // Sayfayı yenile (durum güncellemesi için)
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+                
+                // Check batch status (opsiyonel - arka planda)
+                if (data.batchRequestId) {
+                    setTimeout(() => {
+                        checkBatchStatus(data.batchRequestId);
+                    }, 2000);
+                }
+            } else {
+                alert('Hata: ' + (data.message || 'Ürün gönderilemedi.'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Bir hata oluştu: ' + error.message);
+        })
+        .finally(() => {
+            button.disabled = false;
+            if (button.querySelector('span')) {
+                button.querySelector('span').textContent = originalText;
+            }
+            if (buttonIcon) {
+                buttonIcon.classList.remove('animate-spin');
+            }
+        });
+    };
+
+    // Show Request History Modal
+    window.showRequestHistory = function(productId) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+        
+        fetch(`/admin/ready-products/request-history/${productId}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.requests && data.requests.length > 0) {
+                const modal = document.getElementById('request-details-modal');
+                const content = document.getElementById('request-details-content');
+                
+                // En son isteğin batch_request_id'sini global değişkene kaydet
+                const latestRequest = data.requests[0];
+                window.currentBatchRequestId = latestRequest.batch_request_id;
+                window.currentRequestId = latestRequest.id;
+                
+                let html = '<div class="space-y-4">';
+                html += '<div class="mb-4"><h4 class="text-sm font-semibold text-gray-900 dark:text-white">Toplam ' + data.requests.length + ' istek kaydı bulundu (En son yanıt önce gösteriliyor)</h4></div>';
+                
+                // Tüm istekleri göster (en son önce)
+                data.requests.forEach((request, index) => {
+                    const isLatest = index === 0;
+                    const statusColor = request.status === 'success' ? 'green' : 
+                                      request.status === 'failed' ? 'red' : 
+                                      request.status === 'sent' ? 'yellow' : 'gray';
+                    
+                    html += `<div class="border ${isLatest ? 'border-2 border-blue-500' : 'border-gray-200 dark:border-gray-700'} rounded-lg p-4 ${isLatest ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-white dark:bg-gray-800'}">`;
+                    
+                    if (isLatest) {
+                        html += '<div class="mb-2"><span class="px-2 py-1 bg-blue-600 text-white text-xs font-semibold rounded">EN SON YANIT</span></div>';
+                    }
+                    
+                    // Request Info
+                    html += '<div class="mb-3">';
+                    html += '<h5 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">İstek #' + (data.requests.length - index) + ' - ' + request.created_at + '</h5>';
+                    html += '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">';
+                    html += `<div><span class="text-gray-600 dark:text-gray-400">Durum:</span> <span class="font-semibold text-${statusColor}-600 dark:text-${statusColor}-400">${request.status}</span></div>`;
+                    html += `<div><span class="text-gray-600 dark:text-gray-400">Batch ID:</span> <span class="font-mono text-gray-900 dark:text-white text-xs">${request.batch_request_id || 'N/A'}</span></div>`;
+                    html += `<div><span class="text-gray-600 dark:text-gray-400">Ürün Sayısı:</span> <span class="font-semibold text-gray-900 dark:text-white">${request.items_count}</span></div>`;
+                    if (request.success_count !== null) {
+                        html += `<div><span class="text-gray-600 dark:text-gray-400">Başarılı:</span> <span class="font-semibold text-green-600 dark:text-green-400">${request.success_count}</span></div>`;
+                    }
+                    if (request.failed_count !== null) {
+                        html += `<div><span class="text-gray-600 dark:text-gray-400">Başarısız:</span> <span class="font-semibold text-red-600 dark:text-red-400">${request.failed_count}</span></div>`;
+                    }
+                    html += `<div><span class="text-gray-600 dark:text-gray-400">Gönderim:</span> <span class="text-gray-900 dark:text-white text-xs">${request.sent_at || 'N/A'}</span></div>`;
+                    html += `<div><span class="text-gray-600 dark:text-gray-400">Tamamlanma:</span> <span class="text-gray-900 dark:text-white text-xs">${request.completed_at || 'N/A'}</span></div>`;
+                    html += '</div></div>';
+                    
+                    // Response Data (sadece en son yanıt için detaylı göster)
+                    if (isLatest && request.response_data) {
+                        html += '<div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 mb-2">';
+                        html += '<h6 class="text-xs font-semibold text-gray-900 dark:text-white mb-2">API Yanıtı (Response Data)</h6>';
+                        html += '<pre class="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-x-auto max-h-40 overflow-y-auto">' + JSON.stringify(request.response_data, null, 2) + '</pre>';
+                        html += '</div>';
+                    }
+                    
+                    // Batch Status Data (sadece en son yanıt için detaylı göster)
+                    if (isLatest && request.batch_status_data) {
+                        // Description alanını kaldır ve yerine "..." koy
+                        const batchStatusData = JSON.parse(JSON.stringify(request.batch_status_data));
+                        if (batchStatusData.description !== undefined) {
+                            batchStatusData.description = '...';
+                        }
+                        
+                        // Items array'indeki description'ları da "..." ile değiştir
+                        if (batchStatusData.items && Array.isArray(batchStatusData.items)) {
+                            batchStatusData.items = batchStatusData.items.map(item => {
+                                if (item.description !== undefined) {
+                                    item.description = '...';
+                                }
+                                return item;
+                            });
+                        }
+                        
+                        html += '<div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 mb-2">';
+                        html += '<h6 class="text-xs font-semibold text-gray-900 dark:text-white mb-2">Batch Durum Yanıtı (Batch Status Data)</h6>';
+                        html += '<pre class="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded overflow-x-auto max-h-40 overflow-y-auto">' + JSON.stringify(batchStatusData, null, 2) + '</pre>';
+                        html += '</div>';
+                    }
+                    
+                    // Error Message
+                    if (request.error_message) {
+                        html += '<div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-2 border border-red-200 dark:border-red-800">';
+                        html += '<p class="text-xs text-red-800 dark:text-red-300">' + request.error_message + '</p>';
+                        html += '</div>';
+                    }
+                    
+                    // Diğer istekler için genişletilebilir detay butonu
+                    if (!isLatest) {
+                        html += '<button onclick="showRequestDetails(' + request.id + ')" class="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline">Detayları Görüntüle</button>';
+                    }
+                    
+                    html += '</div>';
+                });
+                
+                html += '</div>';
+                
+                content.innerHTML = html;
+                modal.classList.remove('hidden');
+            } else {
+                alert('Bu ürün için istek geçmişi bulunamadı.');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Bir hata oluştu: ' + error.message);
+        });
+    };
+
+    // Show Request Details Modal (Tek bir istek için)
+    window.showRequestDetails = function(requestId) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+        
+        fetch(`/admin/ready-products/request-details/${requestId}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const modal = document.getElementById('request-details-modal');
+                const content = document.getElementById('request-details-content');
+                
+                // Batch Request ID'yi global değişkene kaydet (refreshBatchStatus için)
+                window.currentBatchRequestId = data.request.batch_request_id;
+                window.currentRequestId = requestId;
+                
+                let html = '<div class="space-y-4">';
+                
+                // Request Info
+                html += '<div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">';
+                html += '<h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">İstek Bilgileri</h4>';
+                html += '<div class="grid grid-cols-2 gap-3 text-sm">';
+                html += `<div><span class="text-gray-600 dark:text-gray-400">Durum:</span> <span class="font-semibold text-gray-900 dark:text-white">${data.request.status}</span></div>`;
+                html += `<div><span class="text-gray-600 dark:text-gray-400">Batch Request ID:</span> <span class="font-mono text-gray-900 dark:text-white">${data.request.batch_request_id || 'N/A'}</span></div>`;
+                html += `<div><span class="text-gray-600 dark:text-gray-400">Ürün Sayısı:</span> <span class="font-semibold text-gray-900 dark:text-white">${data.request.items_count}</span></div>`;
+                if (data.request.success_count !== null) {
+                    html += `<div><span class="text-gray-600 dark:text-gray-400">Başarılı:</span> <span class="font-semibold text-green-600 dark:text-green-400">${data.request.success_count}</span></div>`;
+                }
+                if (data.request.failed_count !== null) {
+                    html += `<div><span class="text-gray-600 dark:text-gray-400">Başarısız:</span> <span class="font-semibold text-red-600 dark:text-red-400">${data.request.failed_count}</span></div>`;
+                }
+                html += `<div><span class="text-gray-600 dark:text-gray-400">Gönderim Zamanı:</span> <span class="text-gray-900 dark:text-white">${data.request.sent_at || 'N/A'}</span></div>`;
+                html += `<div><span class="text-gray-600 dark:text-gray-400">Tamamlanma Zamanı:</span> <span class="text-gray-900 dark:text-white">${data.request.completed_at || 'N/A'}</span></div>`;
+                html += '</div></div>';
+                
+                // Response Data
+                if (data.request.response_data) {
+                    html += '<div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">';
+                    html += '<h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">API Yanıtı (Response Data)</h4>';
+                    html += '<pre class="text-xs bg-gray-100 dark:bg-gray-800 p-3 rounded overflow-x-auto">' + JSON.stringify(data.request.response_data, null, 2) + '</pre>';
+                    html += '</div>';
+                }
+                
+                // Batch Status Data
+                if (data.request.batch_status_data) {
+                    // Description alanını kaldır ve yerine "..." koy
+                    const batchStatusData = JSON.parse(JSON.stringify(data.request.batch_status_data));
+                    if (batchStatusData.description !== undefined) {
+                        batchStatusData.description = '...';
+                    }
+                    
+                    // Items array'indeki description'ları da "..." ile değiştir
+                    if (batchStatusData.items && Array.isArray(batchStatusData.items)) {
+                        batchStatusData.items = batchStatusData.items.map(item => {
+                            if (item.description !== undefined) {
+                                item.description = '...';
+                            }
+                            return item;
+                        });
+                    }
+                    
+                    html += '<div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">';
+                    html += '<h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Batch Durum Yanıtı (Batch Status Data)</h4>';
+                    html += '<pre class="text-xs bg-gray-100 dark:bg-gray-800 p-3 rounded overflow-x-auto">' + JSON.stringify(batchStatusData, null, 2) + '</pre>';
+                    html += '</div>';
+                }
+                
+                // Request Data
+                if (data.request.request_data) {
+                    html += '<div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">';
+                    html += '<h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Gönderilen Veri (Request Data)</h4>';
+                    html += '<pre class="text-xs bg-gray-100 dark:bg-gray-800 p-3 rounded overflow-x-auto max-h-96 overflow-y-auto">' + JSON.stringify(data.request.request_data, null, 2) + '</pre>';
+                    html += '</div>';
+                }
+                
+                // Error Message
+                if (data.request.error_message) {
+                    html += '<div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-800">';
+                    html += '<h4 class="text-sm font-semibold text-red-900 dark:text-red-200 mb-2">Hata Mesajı</h4>';
+                    html += `<p class="text-sm text-red-800 dark:text-red-300">${data.request.error_message}</p>`;
+                    html += '</div>';
+                }
+                
+                html += '</div>';
+                
+                content.innerHTML = html;
+                modal.classList.remove('hidden');
+            } else {
+                alert('Hata: ' + (data.message || 'İstek detayları alınamadı.'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Bir hata oluştu: ' + error.message);
+        });
+    };
+
+    // Refresh Batch Status
+    window.refreshBatchStatus = function() {
+        if (!window.currentBatchRequestId) {
+            alert('Batch Request ID bulunamadı.');
+            return;
+        }
+
+        const btn = document.getElementById('refresh-batch-status-btn');
+        const btnText = btn.querySelector('span');
+        const originalText = btnText ? btnText.textContent : 'Tekrar Sorgula';
+        
+        // Butonu devre dışı bırak
+        btn.disabled = true;
+        if (btnText) {
+            btnText.textContent = 'Sorgulanıyor...';
+        }
+
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+        
+        fetch(`{{ route("admin.ready-products.batch-status", ":batchRequestId") }}`.replace(':batchRequestId', window.currentBatchRequestId), {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Başarılı - modal içeriğini yenile
+                if (window.currentRequestId) {
+                    showRequestDetails(window.currentRequestId);
+                } else {
+                    alert('Batch durumu güncellendi. Sayfa yenileniyor...');
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                }
+            } else {
+                alert('Hata: ' + (data.message || 'Batch durumu kontrol edilemedi.'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Bir hata oluştu: ' + error.message);
+        })
+        .finally(() => {
+            // Butonu tekrar etkinleştir
+            btn.disabled = false;
+            if (btnText) {
+                btnText.textContent = originalText;
+            }
+        });
+    };
+
+    // Close Request Details Modal
+    window.closeRequestDetailsModal = function() {
+        document.getElementById('request-details-modal').classList.add('hidden');
+        // Global değişkenleri temizle
+        window.currentBatchRequestId = null;
+        window.currentRequestId = null;
+    };
+
+    // Modal dışına tıklanınca kapat
+    document.getElementById('request-details-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeRequestDetailsModal();
+        }
+    });
 });
 </script>
 @endsection
