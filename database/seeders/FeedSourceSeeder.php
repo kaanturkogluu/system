@@ -17,7 +17,7 @@ class FeedSourceSeeder extends Seeder
     {
         // Gunes XML feed kaynağını ekle
         $feedSource = FeedSource::firstOrCreate(
-            ['url' => 'https://basital.com/gunesapi'],
+            ['url' => 'https://api.gunes.net/api/Urunler/XmlUrunListesi/17656'],
             [
                 'name' => 'Gunes XML',
                 'type' => 'xml',
