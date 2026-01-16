@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Marketplace;
 use App\Models\MarketplaceCategory;
+use App\Models\MarketplaceSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use SoapClient;
+use SoapFault;
 
 class CategoryController extends Controller
 {
@@ -380,6 +383,219 @@ class CategoryController extends Controller
             'success' => true,
             'message' => 'Kategori oranı başarıyla güncellendi.',
         ]);
+    }
+
+    /**
+     * Download N11 categories from SOAP API and save to JSON file
+     */
+    public function downloadN11Categories(Request $request)
+    {
+        try {
+            // SOAP extension kontrolü
+            if (!extension_loaded('soap') || !class_exists('SoapClient')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'SOAP extension yüklü değil. Lütfen PHP SOAP extension\'ını yükleyin. XAMPP için: php.ini dosyasında "extension=soap" satırının başındaki ";" işaretini kaldırın ve Apache\'yi yeniden başlatın.',
+                ], 400);
+            }
+
+            // N11 pazaryerini bul
+            $n11Marketplace = Marketplace::where('slug', 'n11')->first();
+            
+            if (!$n11Marketplace) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'N11 pazaryeri bulunamadı. Lütfen önce pazaryeri kaydını oluşturun.',
+                ], 400);
+            }
+
+            // Veritabanından N11 ayarlarını al (foreign key ile)
+            $apiKeySetting = MarketplaceSetting::where('marketplace_id', $n11Marketplace->id)
+                ->where('key', 'api_key')
+                ->first();
+            
+            $apiSecretSetting = MarketplaceSetting::where('marketplace_id', $n11Marketplace->id)
+                ->where('key', 'api_secret')
+                ->first();
+
+            $appKey = $apiKeySetting ? $apiKeySetting->value : null;
+            $appSecret = $apiSecretSetting ? $apiSecretSetting->value : null;
+
+            if (!$appKey || !$appSecret) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'N11 API anahtarları yapılandırılmamış. Lütfen pazaryeri ayarlarından N11 api_key ve api_secret değerlerini ayarlayın.',
+                ], 400);
+            }
+
+            // SOAP client oluştur
+            $wsdl = 'https://api.n11.com/ws/CategoryService.wsdl';
+            $soapClient = new SoapClient($wsdl, [
+                'trace' => true,
+                'exceptions' => true,
+                'cache_wsdl' => WSDL_CACHE_NONE,
+            ]);
+
+            // Ana kategorileri çek
+            $topLevelResponse = $soapClient->GetTopLevelCategories([
+                'auth' => [
+                    'appKey' => $appKey,
+                    'appSecret' => $appSecret,
+                ],
+            ]);
+
+            if (!isset($topLevelResponse->result->status) || $topLevelResponse->result->status !== 'success') {
+                $errorMessage = $topLevelResponse->result->errorMessage ?? 'Bilinmeyen hata';
+                return response()->json([
+                    'success' => false,
+                    'message' => 'N11 API hatası: ' . $errorMessage,
+                ], 400);
+            }
+
+            $allCategories = [];
+            $topCategories = $topLevelResponse->categoryList->category ?? [];
+
+            // Her ana kategori için recursive olarak alt kategorileri çek
+            foreach ($topCategories as $topCategory) {
+                $category = $this->fetchN11CategoryRecursive(
+                    $soapClient,
+                    $appKey,
+                    $appSecret,
+                    $topCategory->id,
+                    $topCategory->name,
+                    null
+                );
+                if ($category) {
+                    $allCategories[] = $category;
+                }
+            }
+
+            // JSON formatına dönüştür (Trendyol formatına benzer)
+            $jsonData = [
+                'categories' => $this->flattenN11Categories($allCategories),
+            ];
+
+            // Dosyaya kaydet
+            $filePath = base_path('n11_categories.json');
+            file_put_contents(
+                $filePath,
+                json_encode($jsonData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            );
+
+            // Ana kategorileri filtrele
+            $mainCategories = array_filter($jsonData['categories'], function ($cat) {
+                return ($cat['parentId'] ?? null) === null;
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'N11 kategorileri başarıyla indirildi ve kaydedildi.',
+                'main_categories' => array_values($mainCategories),
+                'total_categories' => count($jsonData['categories']),
+            ]);
+
+        } catch (SoapFault $e) {
+            Log::error('N11 categories download SOAP error', [
+                'error' => $e->getMessage(),
+                'code' => $e->getCode(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'SOAP hatası: ' . $e->getMessage(),
+            ], 500);
+
+        } catch (\Exception $e) {
+            Log::error('N11 categories download error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Hata oluştu: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Recursive olarak N11 kategorilerini çek
+     */
+    private function fetchN11CategoryRecursive($soapClient, $appKey, $appSecret, $categoryId, $categoryName, $parentId, $level = 0)
+    {
+        $category = [
+            'id' => $categoryId,
+            'name' => $categoryName,
+            'parentId' => $parentId,
+            'level' => $level,
+            'subCategories' => [],
+        ];
+
+        try {
+            // Alt kategorileri çek
+            $subCategoriesResponse = $soapClient->GetSubCategories([
+                'auth' => [
+                    'appKey' => $appKey,
+                    'appSecret' => $appSecret,
+                ],
+                'categoryId' => $categoryId,
+            ]);
+
+            if (isset($subCategoriesResponse->result->status) && $subCategoriesResponse->result->status === 'success') {
+                $subCategories = $subCategoriesResponse->category ?? [];
+                
+                if (!is_array($subCategories)) {
+                    $subCategories = [$subCategories];
+                }
+
+                foreach ($subCategories as $subCategory) {
+                    $subCategoryData = $this->fetchN11CategoryRecursive(
+                        $soapClient,
+                        $appKey,
+                        $appSecret,
+                        $subCategory->id,
+                        $subCategory->name,
+                        $categoryId,
+                        $level + 1
+                    );
+                    if ($subCategoryData) {
+                        $category['subCategories'][] = $subCategoryData;
+                    }
+                }
+            }
+        } catch (SoapFault $e) {
+            Log::warning('N11 subcategory fetch error', [
+                'category_id' => $categoryId,
+                'error' => $e->getMessage(),
+            ]);
+            // Hata olsa bile kategoriyi döndür
+        }
+
+        return $category;
+    }
+
+    /**
+     * N11 kategorilerini düzleştir (Trendyol formatına benzer)
+     */
+    private function flattenN11Categories($categories, $result = [])
+    {
+        foreach ($categories as $category) {
+            $flatCategory = [
+                'id' => $category['id'],
+                'name' => $category['name'],
+                'parentId' => $category['parentId'],
+            ];
+
+            $result[] = $flatCategory;
+
+            // Alt kategorileri recursive olarak ekle
+            if (!empty($category['subCategories'])) {
+                $result = $this->flattenN11Categories($category['subCategories'], $result);
+            }
+        }
+
+        return $result;
     }
 }
 

@@ -1,7 +1,7 @@
 @extends('admin.layouts.app')
 
 @section('title', 'Pazaryeri Kategori Eşleştirme')
-@section('page-title', 'Trendyol Kategori Eşleştirme')
+@section('page-title', 'Pazaryeri Kategori Eşleştirme')
 
 @section('content')
 <div class="space-y-6">
@@ -17,15 +17,38 @@
         </div>
     @endif
 
+    <!-- Pazaryeri Seçimi -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <label class="block text-sm font-medium mb-2">Pazaryeri Seçin</label>
+        <select 
+            id="marketplace-selector" 
+            onchange="changeMarketplace(this.value)"
+            class="w-full md:w-64 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500"
+        >
+            <option value="">-- Pazaryeri Seçin --</option>
+            @foreach($activeMarketplaces as $marketplace)
+                <option value="{{ $marketplace->id }}" {{ $selectedMarketplaceId == $marketplace->id ? 'selected' : '' }}>
+                    {{ $marketplace->name }}
+                </option>
+            @endforeach
+        </select>
+    </div>
+
+    @if(!$selectedMarketplace)
+        <div class="bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-400 text-yellow-700 dark:text-yellow-300 px-4 py-3 rounded">
+            Lütfen bir pazaryeri seçin.
+        </div>
+    @endif
+
     <!-- Eşleştirilmiş Kategoriler ve Komisyon Oranları -->
-    @if(isset($mappingDetails) && count($mappingDetails) > 0)
+    @if($selectedMarketplace && isset($mappingDetails) && count($mappingDetails) > 0)
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-        <h2 class="text-xl font-bold mb-4">Eşleştirilmiş Kategoriler ve Komisyon Oranları</h2>
+        <h2 class="text-xl font-bold mb-4">{{ $selectedMarketplace->name }} - Eşleştirilmiş Kategoriler ve Komisyon Oranları</h2>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead class="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Trendyol Kategori</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{{ $selectedMarketplace->name }} Kategori</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sistem Kategori</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Komisyon Oranı (%)</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">İşlem</th>
@@ -33,8 +56,7 @@
                 </thead>
                 <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     @php
-                        $trendyolMarketplace = \App\Models\Marketplace::where('slug', 'trendyol')->first();
-                        $mappedCategories = \App\Models\MarketplaceCategory::where('marketplace_id', $trendyolMarketplace->id)
+                        $mappedCategories = \App\Models\MarketplaceCategory::where('marketplace_id', $selectedMarketplace->id)
                             ->whereNotNull('global_category_id')
                             ->where('is_mapped', true)
                             ->with('globalCategory')
@@ -124,54 +146,89 @@
             </div>
         </div>
 
-        <!-- Sağ: Trendyol Kategorileri -->
+        <!-- Sağ: Pazaryeri Kategorileri -->
+        @if($selectedMarketplace)
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <h2 class="text-xl font-bold mb-4">Trendyol Kategorileri</h2>
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold">{{ $selectedMarketplace->name }} Kategorileri</h2>
+                @if(!$hasCategories)
+                    <button 
+                        id="download-categories-btn" 
+                        onclick="downloadCategories('{{ $selectedMarketplace->slug }}')"
+                        class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg transition"
+                    >
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Kategorileri İndir
+                    </button>
+                @endif
+            </div>
+            @if($hasCategories)
             <div class="mb-4">
                 <input 
                     type="text" 
-                    id="trendyol-search" 
+                    id="marketplace-search" 
                     placeholder="Kategori ara..." 
                     class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                    onkeyup="filterTrendyolCategories(this.value)"
+                    onkeyup="filterMarketplaceCategories(this.value)"
                 >
             </div>
-            <div class="max-h-[600px] overflow-y-auto" id="trendyol-categories-container">
-                @php
-                    function renderTrendyolCategory($category, $level = 0, $existingMappings = []) {
-                        $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
-                        $hasChildren = !empty($category['subCategories']);
-                        $isMapped = isset($existingMappings[$category['id']]);
-                        $mappedClass = $isMapped ? 'bg-green-50 dark:bg-green-900/20 border-green-300' : '';
-                        $mappedBadge = $isMapped ? '<span class="text-xs bg-green-500 text-white px-2 py-1 rounded ml-2">Eşleştirilmiş</span>' : '';
-                        $nameEscaped = htmlspecialchars($category['name'], ENT_QUOTES, 'UTF-8');
-                        
-                        $html = '<div class="trendyol-category-item py-2 px-3 hover:bg-gray-100 dark:hover:bg-gray-700 rounded border ' . $mappedClass . '" data-trendyol-id="' . $category['id'] . '">';
-                        $html .= '<div class="flex items-center justify-between">';
-                        $html .= '<div class="flex-1">';
-                        $html .= '<span>' . $indent . ($hasChildren ? '📁 ' : '📄 ') . $nameEscaped . '</span>';
-                        $html .= $mappedBadge;
-                        $html .= '</div>';
-                        $html .= '<div class="flex items-center gap-2">';
-                        $html .= '<span class="text-xs text-gray-500">ID: ' . $category['id'] . '</span>';
-                        $html .= '<button onclick="mapCategory(' . $category['id'] . ', \'' . $nameEscaped . '\')" class="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Eşleştir</button>';
-                        $html .= '</div>';
-                        $html .= '</div></div>';
-                        
-                        if ($hasChildren) {
-                            foreach ($category['subCategories'] as $subCategory) {
-                                $html .= renderTrendyolCategory($subCategory, $level + 1, $existingMappings);
+            @endif
+            <div class="max-h-[600px] overflow-y-auto" id="marketplace-categories-container">
+                @if($hasCategories && !empty($marketplaceCategories))
+                    @php
+                        function renderMarketplaceCategory($category, $level = 0, $existingMappings = []) {
+                            $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
+                            $hasChildren = !empty($category['subCategories']);
+                            $isMapped = isset($existingMappings[$category['id']]);
+                            $mappedClass = $isMapped ? 'bg-green-50 dark:bg-green-900/20 border-green-300' : '';
+                            $mappedBadge = $isMapped ? '<span class="text-xs bg-green-500 text-white px-2 py-1 rounded ml-2">Eşleştirilmiş</span>' : '';
+                            $nameEscaped = htmlspecialchars($category['name'], ENT_QUOTES, 'UTF-8');
+                            
+                            $html = '<div class="marketplace-category-item py-2 px-3 hover:bg-gray-100 dark:hover:bg-gray-700 rounded border ' . $mappedClass . '" data-marketplace-category-id="' . $category['id'] . '">';
+                            $html .= '<div class="flex items-center justify-between">';
+                            $html .= '<div class="flex-1">';
+                            $html .= '<span>' . $indent . ($hasChildren ? '📁 ' : '📄 ') . $nameEscaped . '</span>';
+                            $html .= $mappedBadge;
+                            $html .= '</div>';
+                            $html .= '<div class="flex items-center gap-2">';
+                            $html .= '<span class="text-xs text-gray-500">ID: ' . $category['id'] . '</span>';
+                            $html .= '<button onclick="mapCategory(' . $category['id'] . ', \'' . $nameEscaped . '\')" class="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Eşleştir</button>';
+                            $html .= '</div>';
+                            $html .= '</div></div>';
+                            
+                            if ($hasChildren) {
+                                foreach ($category['subCategories'] as $subCategory) {
+                                    $html .= renderMarketplaceCategory($subCategory, $level + 1, $existingMappings);
+                                }
                             }
+                            
+                            return $html;
                         }
-                        
-                        return $html;
-                    }
-                @endphp
-                @foreach($trendyolCategories as $category)
-                    {!! renderTrendyolCategory($category, 0, $existingMappings) !!}
-                @endforeach
+                    @endphp
+                    @foreach($marketplaceCategories as $category)
+                        {!! renderMarketplaceCategory($category, 0, $existingMappings) !!}
+                    @endforeach
+                @elseif(!$hasCategories)
+                    <div class="text-center py-12">
+                        <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                        </svg>
+                        <p class="text-gray-500 dark:text-gray-400 mb-4">Bu pazaryeri için kategori bulunamadı.</p>
+                        <p class="text-sm text-gray-400 dark:text-gray-500 mb-4">Kategorileri indirmek için yukarıdaki "Kategorileri İndir" butonuna tıklayın.</p>
+                    </div>
+                @else
+                    <p class="text-gray-500 dark:text-gray-400 text-center py-8">Bu pazaryeri için kategori bulunamadı.</p>
+                @endif
             </div>
         </div>
+        @else
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <h2 class="text-xl font-bold mb-4">Pazaryeri Kategorileri</h2>
+            <p class="text-gray-500 dark:text-gray-400 text-center py-8">Lütfen bir pazaryeri seçin.</p>
+        </div>
+        @endif
     </div>
 </div>
 
@@ -181,8 +238,8 @@
         <h3 class="text-lg font-semibold mb-4">Kategori Eşleştirme</h3>
         <div class="space-y-4">
             <div>
-                <label class="block text-sm font-medium mb-2">Trendyol Kategorisi</label>
-                <div id="selected-trendyol" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded"></div>
+                <label class="block text-sm font-medium mb-2">Pazaryeri Kategorisi</label>
+                <div id="selected-marketplace-category" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded"></div>
             </div>
             <div>
                 <label class="block text-sm font-medium mb-2">Sistem Kategorisi</label>
@@ -213,8 +270,9 @@
 <script>
 let selectedSystemCategoryId = null;
 let selectedSystemCategoryName = null;
-let selectedTrendyolCategoryId = null;
-let selectedTrendyolCategoryName = null;
+let selectedMarketplaceCategoryId = null;
+let selectedMarketplaceCategoryName = null;
+let selectedMarketplaceId = @json($selectedMarketplaceId);
 
 function selectSystemCategory(id, name) {
     selectedSystemCategoryId = id;
@@ -284,18 +342,18 @@ function importAttributes() {
     form.submit();
 }
 
-function mapCategory(trendyolId, trendyolName) {
-    selectedTrendyolCategoryId = trendyolId;
-    selectedTrendyolCategoryName = trendyolName;
+function mapCategory(marketplaceCategoryId, marketplaceCategoryName) {
+    selectedMarketplaceCategoryId = marketplaceCategoryId;
+    selectedMarketplaceCategoryName = marketplaceCategoryName;
     
-    document.getElementById('selected-trendyol').textContent = trendyolName + ' (ID: ' + trendyolId + ')';
+    document.getElementById('selected-marketplace-category').textContent = marketplaceCategoryName + ' (ID: ' + marketplaceCategoryId + ')';
     document.getElementById('selected-system').textContent = selectedSystemCategoryName ? selectedSystemCategoryName + ' (ID: ' + selectedSystemCategoryId + ')' : 'Seçilmedi';
     document.getElementById('save-mapping-btn').disabled = !selectedSystemCategoryId;
     
     // Mevcut komisyon oranını yükle (eğer eşleştirme varsa)
     @if(isset($mappingDetails))
         const mappingDetails = @json($mappingDetails);
-        const existingMapping = mappingDetails[trendyolId];
+        const existingMapping = mappingDetails[marketplaceCategoryId];
         if (existingMapping && existingMapping.commission_rate !== null) {
             document.getElementById('commission-rate-input').value = existingMapping.commission_rate;
         } else {
@@ -312,12 +370,12 @@ function closeMappingModal() {
     document.getElementById('mapping-modal').classList.add('hidden');
     selectedSystemCategoryId = null;
     selectedSystemCategoryName = null;
-    selectedTrendyolCategoryId = null;
-    selectedTrendyolCategoryName = null;
+    selectedMarketplaceCategoryId = null;
+    selectedMarketplaceCategoryName = null;
 }
 
 function saveMapping() {
-    if (!selectedSystemCategoryId || !selectedTrendyolCategoryId) {
+    if (!selectedSystemCategoryId || !selectedMarketplaceCategoryId || !selectedMarketplaceId) {
         return;
     }
 
@@ -330,7 +388,8 @@ function saveMapping() {
             'X-CSRF-TOKEN': '{{ csrf_token() }}'
         },
         body: JSON.stringify({
-            trendyol_category_id: selectedTrendyolCategoryId,
+            marketplace_id: selectedMarketplaceId,
+            marketplace_category_id: selectedMarketplaceCategoryId,
             global_category_id: selectedSystemCategoryId,
             commission_rate: commissionRate || null
         })
@@ -387,8 +446,8 @@ function filterSystemCategories(search) {
     });
 }
 
-function filterTrendyolCategories(search) {
-    const items = document.querySelectorAll('.trendyol-category-item');
+function filterMarketplaceCategories(search) {
+    const items = document.querySelectorAll('.marketplace-category-item');
     const searchLower = search.toLowerCase();
     
     items.forEach(item => {
@@ -396,5 +455,82 @@ function filterTrendyolCategories(search) {
         item.style.display = text.includes(searchLower) ? 'block' : 'none';
     });
 }
+
+function changeMarketplace(marketplaceId) {
+    if (marketplaceId) {
+        window.location.href = '{{ route("admin.marketplace-category-mappings.index") }}?marketplace_id=' + marketplaceId;
+    } else {
+        window.location.href = '{{ route("admin.marketplace-category-mappings.index") }}';
+    }
+}
+
+function downloadCategories(marketplaceSlug) {
+    const btn = document.getElementById('download-categories-btn');
+    if (!btn) return;
+
+    if (!confirm('Kategorileri indirmek istediğinize emin misiniz? Bu işlem biraz zaman alabilir.')) {
+        return;
+    }
+
+    btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<svg class="animate-spin w-5 h-5 inline mr-2" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>İndiriliyor...';
+
+    // Route belirleme
+    let routeUrl = '';
+    if (marketplaceSlug === 'trendyol') {
+        routeUrl = '{{ route("admin.categories.download-trendyol") }}';
+    } else if (marketplaceSlug === 'n11') {
+        routeUrl = '{{ route("admin.categories.download-n11") }}';
+    } else {
+        alert('Bu pazaryeri için kategori indirme desteği bulunmamaktadır.');
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        return;
+    }
+
+    const csrfToken = document.querySelector('meta[name="csrf-token"]');
+    if (!csrfToken) {
+        alert('CSRF token bulunamadı!');
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        return;
+    }
+
+    fetch(routeUrl, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': csrfToken.content,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        },
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.message || 'HTTP ' + response.status);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            alert('Kategoriler başarıyla indirildi! Sayfa yenileniyor...');
+            // Sayfayı yenile
+            window.location.reload();
+        } else {
+            alert('Hata: ' + (data.message || 'Kategoriler indirilemedi'));
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Bir hata oluştu: ' + error.message);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
 </script>
 @endsection
+

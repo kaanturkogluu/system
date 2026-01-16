@@ -25,6 +25,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('/categories', [\App\Http\Controllers\Admin\CategoryController::class, 'index'])->name('categories.index');
         Route::post('/categories/download-trendyol', [\App\Http\Controllers\Admin\CategoryController::class, 'downloadTrendyolCategories'])->name('categories.download-trendyol');
+        Route::post('/categories/download-n11', [\App\Http\Controllers\Admin\CategoryController::class, 'downloadN11Categories'])->name('categories.download-n11');
         Route::get('/categories/get-main-categories', [\App\Http\Controllers\Admin\CategoryController::class, 'getMainCategories'])->name('categories.get-main-categories');
         Route::post('/categories/import', [\App\Http\Controllers\Admin\CategoryController::class, 'importCategories'])->name('categories.import');
         Route::post('/categories/{category}/update-rate', [\App\Http\Controllers\Admin\CategoryController::class, 'updateRate'])->name('categories.update-rate');

@@ -14,6 +14,7 @@ use App\Models\MarketplaceCategory;
 use App\Models\MarketplaceCountryMapping;
 use App\Models\MarketplaceShippingCompanyMapping;
 use App\Models\TrendyolProductRequest;
+use App\Models\Country;
 use App\Helpers\MarketplaceConfig;
 use App\Services\ProductAttributePersistenceService;
 use App\Services\ProductPriceCalculationService;
@@ -420,58 +421,70 @@ class ReadyProductController extends Controller
                     $isMenşei = true;
                 }
 
-                // Menşei özelliği ve brand->originCountry mevcut ise
-                if ($isMenşei && $product->brand && $product->brand->originCountry) {
-                    // Trendyol marketplace'ini bul
-                    $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
+                // Menşei özelliği için - Gönderilmeye hazır ürünlerde her zaman TR olarak gönder
+                if ($isMenşei) {
+                    // TR ülkesini bul
+                    $trCountry = Country::where('code', 'TR')->where('status', 'active')->first();
                     
-                    if ($trendyolMarketplace) {
-                        // Marketplace country mapping'i bul
-                        $countryMapping = MarketplaceCountryMapping::where('marketplace_id', $trendyolMarketplace->id)
-                            ->where('country_id', $product->brand->originCountry->id)
+                    if ($trCountry) {
+                        // Trendyol marketplace'ini bul
+                        $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
+                        
+                        if ($trendyolMarketplace) {
+                            // TR için Marketplace country mapping'i bul
+                            $countryMapping = MarketplaceCountryMapping::where('marketplace_id', $trendyolMarketplace->id)
+                                ->where('country_id', $trCountry->id)
+                                ->where('status', 'active')
+                                ->first();
+                            
+                            if ($countryMapping && $countryMapping->external_country_id) {
+                                // Mapping'den Trendyol attribute value ID'sini kullan
+                                $attributes[] = [
+                                    'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                                    'attributeValueId' => $countryMapping->external_country_id, // Trendyol menşei value ID
+                                ];
+                                continue;
+                            } elseif ($countryMapping && $countryMapping->external_country_code) {
+                                // Mapping'den Trendyol country code'unu custom değer olarak kullan
+                                $attributes[] = [
+                                    'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
+                                    'customAttributeValue' => $countryMapping->external_country_code,
+                                ];
+                                continue;
+                            }
+                        }
+                        
+                        // Mapping yoksa, TR için AttributeValue'da ara veya custom değer olarak ekle
+                        $trCountryName = $trCountry->name;
+                        $normalizedOrigin = $this->normalizeValue($trCountryName);
+                        
+                        // AttributeValue'da ara
+                        $attributeValue = AttributeValue::where('attribute_id', $attribute->id)
+                            ->where('normalized_value', $normalizedOrigin)
                             ->where('status', 'active')
                             ->first();
                         
-                        if ($countryMapping && $countryMapping->external_country_id) {
-                            // Mapping'den Trendyol attribute value ID'sini kullan
+                        if ($attributeValue) {
                             $attributes[] = [
                                 'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
-                                'attributeValueId' => $countryMapping->external_country_id, // Trendyol menşei value ID
+                                'attributeValueId' => $attributeValue->external_id ?? $attributeValue->id, // Trendyol attribute value ID
                             ];
-                            continue;
-                        } elseif ($countryMapping && $countryMapping->external_country_code) {
-                            // Mapping'den Trendyol country code'unu custom değer olarak kullan
+                        } else {
+                            // Custom değer olarak TR ekle
                             $attributes[] = [
                                 'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
-                                'customAttributeValue' => $countryMapping->external_country_code,
+                                'customAttributeValue' => 'TR',
                             ];
-                            continue;
                         }
-                    }
-                    
-                    // Mapping yoksa, AttributeValue'da ara veya custom değer olarak ekle
-                    $originCountryName = $product->brand->originCountry->name;
-                    $normalizedOrigin = $this->normalizeValue($originCountryName);
-                    
-                    // AttributeValue'da ara
-                    $attributeValue = AttributeValue::where('attribute_id', $attribute->id)
-                        ->where('normalized_value', $normalizedOrigin)
-                        ->where('status', 'active')
-                        ->first();
-                    
-                    if ($attributeValue) {
-                        $attributes[] = [
-                            'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
-                            'attributeValueId' => $attributeValue->external_id ?? $attributeValue->id, // Trendyol attribute value ID
-                        ];
+                        continue;
                     } else {
-                        // Custom değer olarak ekle
+                        // TR ülkesi bulunamadıysa, direkt TR olarak ekle
                         $attributes[] = [
                             'attributeId' => $attribute->external_id ?? $attribute->id, // Trendyol attribute ID
-                            'customAttributeValue' => $originCountryName,
+                            'customAttributeValue' => 'TR',
                         ];
+                        continue;
                     }
-                    continue;
                 }
 
                 // product_attributes tablosundan değeri bul (SINGLE source of truth)
@@ -536,57 +549,60 @@ class ReadyProductController extends Controller
         }
         
         // Menşei bilgisini her zaman ekle (required attributes listesinde olmasa bile)
-        // Eğer brand ve originCountry varsa menşei bilgisini ekle
-        if ($product->brand && $product->brand->originCountry) {
-             // Menşei özelliğini bul - Trendyol'da menşei attribute ID'si genellikle 1192
-            // Önce external_id = 1192 olanı ara, yoksa name/code ile ara
-            $menşeiAttribute = Attribute::where('external_id', 1192)
-                ->orWhere(function($query) {
-                    $query->whereRaw('LOWER(TRIM(name)) = ?', ['menşei'])
-                          ->orWhereRaw('LOWER(TRIM(code)) = ?', ['menşei'])
-                          ->orWhereRaw('LOWER(TRIM(code)) = ?', ['mensei'])
-                          ->orWhereRaw('LOWER(TRIM(name)) LIKE ?', ['%menşei%'])
-                          ->orWhereRaw('LOWER(TRIM(name)) LIKE ?', ['%mensei%']);
-                })
-                ->first();
-            
-            // Eğer menşei özelliği bulunamadıysa, external_id = 1192 ile oluştur veya kullan
-            if (!$menşeiAttribute) {
-                // Trendyol menşei attribute ID'si 1192
-                $menşeiAttribute = Attribute::firstOrCreate(
-                    ['external_id' => 1192],
-                    [
-                        'name' => 'Menşei',
-                        'code' => 'mensei',
-                        'data_type' => 'enum',
-                        'status' => 'active',
-                    ]
-                );
+        // Gönderilmeye hazır ürünlerde her zaman TR olarak gönder
+        // Menşei özelliğini bul - Trendyol'da menşei attribute ID'si genellikle 1192
+        // Önce external_id = 1192 olanı ara, yoksa name/code ile ara
+        $menşeiAttribute = Attribute::where('external_id', 1192)
+            ->orWhere(function($query) {
+                $query->whereRaw('LOWER(TRIM(name)) = ?', ['menşei'])
+                      ->orWhereRaw('LOWER(TRIM(code)) = ?', ['menşei'])
+                      ->orWhereRaw('LOWER(TRIM(code)) = ?', ['mensei'])
+                      ->orWhereRaw('LOWER(TRIM(name)) LIKE ?', ['%menşei%'])
+                      ->orWhereRaw('LOWER(TRIM(name)) LIKE ?', ['%mensei%']);
+            })
+            ->first();
+        
+        // Eğer menşei özelliği bulunamadıysa, external_id = 1192 ile oluştur veya kullan
+        if (!$menşeiAttribute) {
+            // Trendyol menşei attribute ID'si 1192
+            $menşeiAttribute = Attribute::firstOrCreate(
+                ['external_id' => 1192],
+                [
+                    'name' => 'Menşei',
+                    'code' => 'mensei',
+                    'data_type' => 'enum',
+                    'status' => 'active',
+                ]
+            );
+        }
+        
+        if ($menşeiAttribute) {
+            // Menşei zaten attributes array'inde var mı kontrol et
+            $menşeiExists = false;
+            $menşeiAttributeId = $menşeiAttribute->external_id ?? $menşeiAttribute->id;
+            foreach ($attributes as $attr) {
+                if (isset($attr['attributeId']) && 
+                    ($attr['attributeId'] == $menşeiAttributeId || 
+                     $attr['attributeId'] == $menşeiAttribute->external_id || 
+                     $attr['attributeId'] == $menşeiAttribute->id)) {
+                    $menşeiExists = true;
+                    break;
+                }
             }
             
-            if ($menşeiAttribute) {
-                // Menşei zaten attributes array'inde var mı kontrol et
-                $menşeiExists = false;
-                $menşeiAttributeId = $menşeiAttribute->external_id ?? $menşeiAttribute->id;
-                foreach ($attributes as $attr) {
-                    if (isset($attr['attributeId']) && 
-                        ($attr['attributeId'] == $menşeiAttributeId || 
-                         $attr['attributeId'] == $menşeiAttribute->external_id || 
-                         $attr['attributeId'] == $menşeiAttribute->id)) {
-                        $menşeiExists = true;
-                        break;
-                    }
-                }
+            // Menşei yoksa TR olarak ekle
+            if (!$menşeiExists) {
+                // TR ülkesini bul
+                $trCountry = Country::where('code', 'TR')->where('status', 'active')->first();
                 
-                // Menşei yoksa ekle
-                if (!$menşeiExists) {
+                if ($trCountry) {
                     // Trendyol marketplace'ini bul
                     $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
                     
                     if ($trendyolMarketplace) {
-                        // Marketplace country mapping'i bul
+                        // TR için Marketplace country mapping'i bul
                         $countryMapping = MarketplaceCountryMapping::where('marketplace_id', $trendyolMarketplace->id)
-                            ->where('country_id', $product->brand->originCountry->id)
+                            ->where('country_id', $trCountry->id)
                             ->where('status', 'active')
                             ->first();
                         
@@ -603,9 +619,9 @@ class ReadyProductController extends Controller
                                 'customAttributeValue' => $countryMapping->external_country_code,
                             ];
                         } else {
-                            // Mapping yoksa, AttributeValue'da ara veya custom değer olarak ekle
-                            $originCountryName = $product->brand->originCountry->name;
-                            $normalizedOrigin = $this->normalizeValue($originCountryName);
+                            // Mapping yoksa, TR için AttributeValue'da ara veya custom değer olarak ekle
+                            $trCountryName = $trCountry->name;
+                            $normalizedOrigin = $this->normalizeValue($trCountryName);
                             
                             // AttributeValue'da ara
                             $attributeValue = AttributeValue::where('attribute_id', $menşeiAttribute->id)
@@ -619,20 +635,26 @@ class ReadyProductController extends Controller
                                     'attributeValueId' => $attributeValue->external_id, // Trendyol attribute value ID
                                 ];
                             } else {
-                                // Custom değer olarak ekle
+                                // Custom değer olarak TR ekle
                                 $attributes[] = [
                                     'attributeId' => $menşeiAttribute->external_id ?? 1192, // Trendyol menşei attribute ID
-                                    'customAttributeValue' => $originCountryName,
+                                    'customAttributeValue' => 'TR',
                                 ];
                             }
                         }
                     } else {
-                        // Marketplace bulunamadı, custom değer olarak ekle
+                        // Marketplace bulunamadı, custom değer olarak TR ekle
                         $attributes[] = [
                             'attributeId' => $menşeiAttribute->external_id ?? 1192, // Trendyol menşei attribute ID
-                            'customAttributeValue' => $product->brand->originCountry->name,
+                            'customAttributeValue' => 'TR',
                         ];
                     }
+                } else {
+                    // TR ülkesi bulunamadıysa, direkt TR olarak ekle
+                    $attributes[] = [
+                        'attributeId' => $menşeiAttribute->external_id ?? 1192, // Trendyol menşei attribute ID
+                        'customAttributeValue' => 'TR',
+                    ];
                 }
             }
         }

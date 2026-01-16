@@ -12,6 +12,11 @@ use Illuminate\Support\Facades\Log;
 
 class TrendyolBrandSyncCommand extends Command
 {
+    /**
+     * Sistemdeki kategorilerin Trendyol'da eşleşenlerini bulur ve Veri tabanına search result'larını kaydeder.
+     *
+     * @var string
+     */
     protected $signature = 'app:trendyol-brand-sync
                             {--limit= : Limit number of brands to process}
                             {--delay=1 : Delay between API calls in seconds}';

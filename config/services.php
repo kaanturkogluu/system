@@ -41,4 +41,9 @@ return [
         'api_secret' => env('TRENDYOL_API_SECRET'),
     ],
 
+    'n11' => [
+        'app_key' => env('N11_APP_KEY'),
+        'app_secret' => env('N11_APP_SECRET'),
+    ],
+
 ];

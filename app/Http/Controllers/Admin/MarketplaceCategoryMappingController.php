@@ -12,8 +12,62 @@ class MarketplaceCategoryMappingController extends Controller
 {
     public function index(Request $request)
     {
-        // Load Trendyol categories from JSON
-        $trendyolCategories = $this->loadTrendyolCategories();
+        // Get active marketplaces
+        $activeMarketplaces = Marketplace::where('status', 'active')
+            ->orderBy('name')
+            ->get();
+
+        // Get selected marketplace ID from request or default to first active marketplace
+        $selectedMarketplaceId = $request->get('marketplace_id');
+        
+        // If no marketplace selected, use first active marketplace
+        if (!$selectedMarketplaceId && $activeMarketplaces->isNotEmpty()) {
+            $selectedMarketplaceId = $activeMarketplaces->first()->id;
+        }
+
+        $selectedMarketplace = null;
+        $marketplaceCategories = [];
+        $existingMappings = [];
+        $mappingDetails = [];
+        $hasCategories = false;
+
+        if ($selectedMarketplaceId) {
+            $selectedMarketplace = Marketplace::find($selectedMarketplaceId);
+            
+            if ($selectedMarketplace) {
+                // Load categories based on marketplace
+                if ($selectedMarketplace->slug === 'trendyol') {
+                    // For Trendyol, load from JSON file
+                    $marketplaceCategories = $this->loadTrendyolCategories();
+                } elseif ($selectedMarketplace->slug === 'n11') {
+                    // For N11, load from JSON file
+                    $marketplaceCategories = $this->loadN11Categories();
+                } else {
+                    // For other marketplaces, load from database
+                    $marketplaceCategories = $this->loadMarketplaceCategoriesFromDb($selectedMarketplace->id);
+                }
+
+                // Check if categories exist
+                $hasCategories = !empty($marketplaceCategories);
+
+                // Get existing mappings with commission rates
+                $mappings = MarketplaceCategory::where('marketplace_id', $selectedMarketplace->id)
+                    ->whereNotNull('global_category_id')
+                    ->with('globalCategory')
+                    ->get()
+                    ->keyBy('marketplace_category_id');
+                
+                foreach ($mappings as $mapping) {
+                    $existingMappings[$mapping->marketplace_category_id] = $mapping->global_category_id;
+                    $mappingDetails[$mapping->marketplace_category_id] = [
+                        'id' => $mapping->id,
+                        'global_category_id' => $mapping->global_category_id,
+                        'commission_rate' => $mapping->commission_rate,
+                        'category_name' => $mapping->globalCategory ? $mapping->globalCategory->name : null,
+                    ];
+                }
+            }
+        }
         
         // Get all system categories
         $systemCategories = Category::whereNull('parent_id')
@@ -21,35 +75,15 @@ class MarketplaceCategoryMappingController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Get existing mappings with commission rates
-        $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
-        $existingMappings = [];
-        $mappingDetails = [];
-        
-        if ($trendyolMarketplace) {
-            $mappings = MarketplaceCategory::where('marketplace_id', $trendyolMarketplace->id)
-                ->whereNotNull('global_category_id')
-                ->with('globalCategory')
-                ->get()
-                ->keyBy('marketplace_category_id');
-            
-            foreach ($mappings as $mapping) {
-                $existingMappings[$mapping->marketplace_category_id] = $mapping->global_category_id;
-                $mappingDetails[$mapping->marketplace_category_id] = [
-                    'id' => $mapping->id,
-                    'global_category_id' => $mapping->global_category_id,
-                    'commission_rate' => $mapping->commission_rate,
-                    'category_name' => $mapping->globalCategory ? $mapping->globalCategory->name : null,
-                ];
-            }
-        }
-
         return view('admin.marketplace-category-mappings.index', compact(
-            'trendyolCategories',
+            'activeMarketplaces',
+            'selectedMarketplace',
+            'selectedMarketplaceId',
+            'marketplaceCategories',
             'systemCategories',
             'existingMappings',
             'mappingDetails',
-            'trendyolMarketplace'
+            'hasCategories'
         ));
     }
 
@@ -67,37 +101,182 @@ class MarketplaceCategoryMappingController extends Controller
             return [];
         }
 
-        return $json['categories'];
+        return $this->convertFlatCategoriesToTree($json['categories']);
+    }
+
+    /**
+     * Load N11 categories from JSON file
+     */
+    private function loadN11Categories()
+    {
+        $jsonPath = base_path('n11_categories.json');
+        
+        if (!file_exists($jsonPath)) {
+            return [];
+        }
+
+        $json = json_decode(file_get_contents($jsonPath), true);
+        
+        if (empty($json) || !isset($json['categories'])) {
+            return [];
+        }
+
+        return $this->convertFlatCategoriesToTree($json['categories']);
+    }
+
+    /**
+     * Convert flat category array to tree structure
+     */
+    private function convertFlatCategoriesToTree($flatCategories)
+    {
+        // Create a map for quick lookup
+        $categoryMap = [];
+        foreach ($flatCategories as $cat) {
+            $categoryMap[$cat['id']] = $cat;
+            $categoryMap[$cat['id']]['subCategories'] = [];
+        }
+
+        // Build tree
+        $tree = [];
+        foreach ($flatCategories as $cat) {
+            if (empty($cat['parentId']) || !isset($categoryMap[$cat['parentId']])) {
+                // Root category
+                $tree[] = $this->buildCategoryTree($cat, $categoryMap);
+            }
+        }
+
+        return $tree;
+    }
+
+    /**
+     * Build category tree recursively
+     */
+    private function buildCategoryTree($category, $categoryMap)
+    {
+        $tree = [
+            'id' => $category['id'],
+            'name' => $category['name'],
+            'parentId' => $category['parentId'] ?? null,
+            'subCategories' => [],
+        ];
+
+        // Find children
+        foreach ($categoryMap as $cat) {
+            if (isset($cat['parentId']) && $cat['parentId'] == $category['id']) {
+                $tree['subCategories'][] = $this->buildCategoryTree($cat, $categoryMap);
+            }
+        }
+
+        return $tree;
+    }
+
+    /**
+     * Load marketplace categories from database
+     */
+    private function loadMarketplaceCategoriesFromDb($marketplaceId)
+    {
+        // Load all categories for this marketplace
+        $allCategories = MarketplaceCategory::where('marketplace_id', $marketplaceId)
+            ->orderBy('name')
+            ->get();
+
+        // Get root categories (parent_id is null)
+        $rootCategories = $allCategories->whereNull('marketplace_parent_id');
+
+        // Build a map for quick lookup
+        $categoryMap = $allCategories->keyBy('marketplace_category_id');
+
+        return $this->convertDbCategoriesToArray($rootCategories, $categoryMap);
+    }
+
+    /**
+     * Convert database categories to array format similar to JSON structure
+     */
+    private function convertDbCategoriesToArray($categories, $categoryMap, $level = 0)
+    {
+        $result = [];
+        
+        foreach ($categories as $category) {
+            $categoryData = [
+                'id' => $category->marketplace_category_id,
+                'name' => $category->name,
+                'parentId' => $category->marketplace_parent_id,
+                'level' => $category->level ?? $level,
+            ];
+
+            // Find children for this category
+            $children = $categoryMap->filter(function ($cat) use ($category) {
+                return $cat->marketplace_parent_id == $category->marketplace_category_id;
+            });
+
+            // Recursively add children
+            if ($children->isNotEmpty()) {
+                $categoryData['subCategories'] = $this->convertDbCategoriesToArray(
+                    $children,
+                    $categoryMap,
+                    $level + 1
+                );
+            }
+
+            $result[] = $categoryData;
+        }
+
+        return $result;
     }
 
     public function update(Request $request)
     {
         $validated = $request->validate([
-            'trendyol_category_id' => 'required|integer',
+            'marketplace_id' => 'required|exists:marketplaces,id',
+            'marketplace_category_id' => 'required|integer',
             'global_category_id' => 'nullable|exists:categories,id',
             'commission_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
-        $trendyolMarketplace = Marketplace::where('slug', 'trendyol')->first();
+        $marketplace = Marketplace::find($validated['marketplace_id']);
         
-        if (!$trendyolMarketplace) {
-            return back()->with('error', 'Trendyol pazaryeri bulunamadı.');
+        if (!$marketplace) {
+            return response()->json(['success' => false, 'message' => 'Pazaryeri bulunamadı.'], 404);
         }
 
         $marketplaceCategory = MarketplaceCategory::firstOrNew([
-            'marketplace_id' => $trendyolMarketplace->id,
-            'marketplace_category_id' => $validated['trendyol_category_id'],
+            'marketplace_id' => $marketplace->id,
+            'marketplace_category_id' => $validated['marketplace_category_id'],
         ]);
 
-        // If new, we need to get category name from JSON
+        // If new, we need to get category data
         if (!$marketplaceCategory->exists) {
-            $trendyolCategories = $this->loadTrendyolCategories();
-            $categoryData = $this->findCategoryById($trendyolCategories, $validated['trendyol_category_id']);
-            
-            if ($categoryData) {
-                $marketplaceCategory->name = $categoryData['name'];
-                $marketplaceCategory->marketplace_parent_id = $categoryData['parentId'] ?? null;
-                $marketplaceCategory->level = $this->calculateLevel($trendyolCategories, $validated['trendyol_category_id']);
+            if ($marketplace->slug === 'trendyol') {
+                // For Trendyol, get from JSON
+                $trendyolCategories = $this->loadTrendyolCategories();
+                $categoryData = $this->findCategoryById($trendyolCategories, $validated['marketplace_category_id']);
+                
+                if ($categoryData) {
+                    $marketplaceCategory->name = $categoryData['name'];
+                    $marketplaceCategory->marketplace_parent_id = $categoryData['parentId'] ?? null;
+                    $marketplaceCategory->level = $this->calculateLevel($trendyolCategories, $validated['marketplace_category_id']);
+                }
+            } elseif ($marketplace->slug === 'n11') {
+                // For N11, get from JSON
+                $n11Categories = $this->loadN11Categories();
+                $categoryData = $this->findCategoryById($n11Categories, $validated['marketplace_category_id']);
+                
+                if ($categoryData) {
+                    $marketplaceCategory->name = $categoryData['name'];
+                    $marketplaceCategory->marketplace_parent_id = $categoryData['parentId'] ?? null;
+                    $marketplaceCategory->level = $this->calculateLevel($n11Categories, $validated['marketplace_category_id']);
+                }
+            } else {
+                // For other marketplaces, try to find in database
+                $existingCategory = MarketplaceCategory::where('marketplace_id', $marketplace->id)
+                    ->where('marketplace_category_id', $validated['marketplace_category_id'])
+                    ->first();
+                
+                if ($existingCategory) {
+                    $marketplaceCategory->name = $existingCategory->name;
+                    $marketplaceCategory->marketplace_parent_id = $existingCategory->marketplace_parent_id;
+                    $marketplaceCategory->level = $existingCategory->level;
+                }
             }
         }
 
